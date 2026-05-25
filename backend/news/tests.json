@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "GET news returns list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": { "source": "cache" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,9 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { TESTS_DATA, type TestData } from "@/data/tests";
 import { BRIEFINGS_DATA } from "@/data/briefings";
 import BriefingPlayer from "@/components/BriefingPlayer";
+
+const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
+
+interface NewsItem {
+  tag: string;
+  title: string;
+  description: string;
+  url: string;
+  date: string;
+}
 
 type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "checklists" | "contacts";
 type TestMode = "list" | "running" | "results";
@@ -16,12 +26,6 @@ const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
   { id: "cabinet", label: "Личный кабинет", icon: "UserCircle" },
   { id: "checklists", label: "Чек-листы", icon: "ListChecks" },
   { id: "contacts", label: "Контакты", icon: "MessageSquare" },
-];
-
-const NEWS = [
-  { tag: "Новость", date: "23 мая 2026", title: "Обновлены требования по электробезопасности", desc: "Приказ Минтруда №123 вступает в силу с 1 июня 2026 года." },
-  { tag: "Справка", date: "20 мая 2026", title: "Требования к СИЗ на производстве", desc: "Обновлённый справочник по средствам индивидуальной защиты." },
-  { tag: "Новость", date: "15 мая 2026", title: "Плановая проверка ГИТ: что нужно знать", desc: "Чек-лист для подготовки к проверке государственной инспекции." },
 ];
 
 const CHECKLISTS_DATA = [
@@ -83,6 +87,22 @@ export default function Index() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
   const [notification, setNotification] = useState(true);
+
+  // News state
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [newsFilter, setNewsFilter] = useState("Все");
+
+  useEffect(() => {
+    fetch(NEWS_URL)
+      .then(r => r.json())
+      .then(data => setNews(data.news || []))
+      .catch(() => setNews([]))
+      .finally(() => setNewsLoading(false));
+  }, []);
+
+  const newsFilters = ["Все", "Новость", "Норматив", "Разъяснение", "Надзор", "Мероприятие"];
+  const filteredNews = newsFilter === "Все" ? news : news.filter(n => n.tag === newsFilter);
 
   // Briefing state
   const [activeBriefingId, setActiveBriefingId] = useState<string | null>(null);
@@ -296,55 +316,138 @@ export default function Index() {
 
             <div className="bg-white border border-border rounded-lg p-5">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-sm">Последние новости</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold text-sm">Последние новости Минтруда</h2>
+                  {!newsLoading && news.length > 0 && (
+                    <span className="text-xs text-green-600 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+                      Обновлено сегодня
+                    </span>
+                  )}
+                </div>
                 <button onClick={() => navigate("info")} className="text-xs text-primary hover:underline">Все новости →</button>
               </div>
-              <div className="grid md:grid-cols-3 gap-4">
-                {NEWS.map((n, i) => (
-                  <div key={i} className="border border-border rounded-md p-3 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">{n.tag}</span>
-                      <span className="text-xs text-muted-foreground">{n.date}</span>
+              {newsLoading ? (
+                <div className="grid md:grid-cols-3 gap-4">
+                  {[1,2,3].map(i => (
+                    <div key={i} className="border border-border rounded-md p-3 animate-pulse">
+                      <div className="h-3 bg-muted rounded w-20 mb-2"></div>
+                      <div className="h-4 bg-muted rounded w-full mb-1"></div>
+                      <div className="h-4 bg-muted rounded w-3/4"></div>
                     </div>
-                    <p className="text-sm font-medium leading-snug">{n.title}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-3 gap-4">
+                  {news.slice(0, 3).map((n, i) => (
+                    <a key={i} href={n.url} target="_blank" rel="noopener noreferrer"
+                      className="border border-border rounded-md p-3 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer block">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">{n.tag}</span>
+                        <span className="text-xs text-muted-foreground">{n.date}</span>
+                      </div>
+                      <p className="text-sm font-medium leading-snug">{n.title}</p>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {active === "info" && (
           <div className="animate-fade-in space-y-6">
-            <div>
-              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
-              <h1 className="text-2xl font-semibold">Информация</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Новости и справочные материалы по охране труда</p>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
+                <h1 className="text-2xl font-semibold">Информация</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Официальные новости Минтруда России по охране труда
+                  {!newsLoading && news.length > 0 && (
+                    <span className="ml-2 text-green-600 font-medium">· {news.length} материалов</span>
+                  )}
+                </p>
+              </div>
+              <a
+                href="https://mintrud.gov.ru/labour/safety"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5 transition-colors whitespace-nowrap"
+              >
+                <Icon name="ExternalLink" size={12} fallback="Circle" />
+                Открыть на сайте Минтруда
+              </a>
             </div>
 
             <div className="flex gap-2 flex-wrap">
-              {["Все", "Новости", "Нормативы", "Справочники", "Приказы"].map((f, i) => (
-                <button key={f} className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${i === 0 ? "bg-primary text-white border-primary" : "border-border hover:bg-muted text-foreground"}`}>{f}</button>
+              {newsFilters.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setNewsFilter(f)}
+                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                    newsFilter === f
+                      ? "bg-primary text-white border-primary"
+                      : "border-border hover:bg-muted text-foreground"
+                  }`}
+                >
+                  {f}
+                  {f !== "Все" && news.filter(n => n.tag === f).length > 0 && (
+                    <span className="ml-1 opacity-70">({news.filter(n => n.tag === f).length})</span>
+                  )}
+                </button>
               ))}
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                ...NEWS,
-                { tag: "Норматив", date: "10 мая 2026", title: "ГОСТ 12.0.230-2007 ССБТ", desc: "Системы управления охраной труда. Общие требования." },
-                { tag: "Приказ", date: "5 мая 2026", title: "Приказ №772н Минтруда РФ", desc: "Требования к обучению по охране труда." },
-                { tag: "Справка", date: "1 мая 2026", title: "Классификация вредных факторов", desc: "Физические, химические, биологические и психофизиологические факторы производственной среды." },
-              ].map((n, i) => (
-                <div key={i} className="bg-white border border-border rounded-lg p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">{n.tag}</span>
-                    <span className="text-xs text-muted-foreground">{n.date}</span>
+            {newsLoading ? (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1,2,3,4,5,6].map(i => (
+                  <div key={i} className="bg-white border border-border rounded-lg p-4 animate-pulse">
+                    <div className="flex gap-2 mb-3">
+                      <div className="h-4 bg-muted rounded w-16"></div>
+                      <div className="h-4 bg-muted rounded w-20"></div>
+                    </div>
+                    <div className="h-4 bg-muted rounded w-full mb-1.5"></div>
+                    <div className="h-4 bg-muted rounded w-4/5 mb-1.5"></div>
+                    <div className="h-3 bg-muted rounded w-full mt-3"></div>
+                    <div className="h-3 bg-muted rounded w-3/4"></div>
                   </div>
-                  <h3 className="font-medium text-sm mb-1.5 leading-snug">{n.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{n.desc}</p>
-                  <button className="mt-3 text-xs text-primary hover:underline">Читать →</button>
-                </div>
-              ))}
+                ))}
+              </div>
+            ) : filteredNews.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <Icon name="Newspaper" size={36} className="mx-auto mb-3 opacity-30" fallback="Circle" />
+                <p className="text-sm">Нет новостей по выбранной категории</p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredNews.map((n, i) => (
+                  <a
+                    key={i}
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white border border-border rounded-lg p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 flex flex-col group"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">{n.tag}</span>
+                      <span className="text-xs text-muted-foreground">{n.date}</span>
+                    </div>
+                    <h3 className="font-medium text-sm mb-2 leading-snug flex-1 group-hover:text-primary transition-colors">{n.title}</h3>
+                    {n.description && (
+                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{n.description}</p>
+                    )}
+                    <span className="mt-3 text-xs text-primary flex items-center gap-1">
+                      Читать на сайте Минтруда
+                      <Icon name="ExternalLink" size={10} fallback="Circle" />
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
+              <Icon name="RefreshCw" size={12} fallback="Circle" />
+              <span>Новости обновляются автоматически каждый день из RSS-ленты Минтруда России</span>
             </div>
           </div>
         )}
