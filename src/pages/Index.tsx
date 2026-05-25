@@ -1,8 +1,10 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
+import { TESTS_DATA, type TestData } from "@/data/tests";
 
 type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "checklists" | "contacts";
+type TestMode = "list" | "running" | "results";
 
 const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
   { id: "home", label: "Главная", icon: "LayoutDashboard" },
@@ -18,13 +20,6 @@ const NEWS = [
   { tag: "Новость", date: "23 мая 2026", title: "Обновлены требования по электробезопасности", desc: "Приказ Минтруда №123 вступает в силу с 1 июня 2026 года." },
   { tag: "Справка", date: "20 мая 2026", title: "Требования к СИЗ на производстве", desc: "Обновлённый справочник по средствам индивидуальной защиты." },
   { tag: "Новость", date: "15 мая 2026", title: "Плановая проверка ГИТ: что нужно знать", desc: "Чек-лист для подготовки к проверке государственной инспекции." },
-];
-
-const TESTS = [
-  { title: "Общие требования охраны труда", questions: 20, time: "30 мин", status: "passed", score: 90 },
-  { title: "Пожарная безопасность", questions: 15, time: "20 мин", status: "pending", score: null },
-  { title: "Электробезопасность. Группа II", questions: 25, time: "40 мин", status: "in_progress", score: null },
-  { title: "Работа на высоте", questions: 18, time: "25 мин", status: "pending", score: null },
 ];
 
 const BRIEFINGS = [
@@ -78,6 +73,7 @@ function StatusBadge({ status }: { status: string }) {
     in_progress: { label: "В процессе", color: "bg-blue-100 text-blue-700" },
     done: { label: "Выполнен", color: "bg-green-100 text-green-700" },
     due: { label: "Требуется", color: "bg-amber-100 text-amber-700" },
+    failed: { label: "Не пройден", color: "bg-red-100 text-red-600" },
   };
   const s = map[status] || map.pending;
   return (
@@ -92,6 +88,39 @@ export default function Index() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
   const [notification, setNotification] = useState(true);
+
+  // Test state
+  const [testMode, setTestMode] = useState<TestMode>("list");
+  const [activeTest, setActiveTest] = useState<TestData | null>(null);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [completedTests, setCompletedTests] = useState<Record<string, number>>({});
+
+  const startTest = (test: TestData) => {
+    setActiveTest(test);
+    setCurrentQ(0);
+    setAnswers({});
+    setTestMode("running");
+  };
+
+  const selectAnswer = (qIndex: number, optIndex: number) => {
+    setAnswers(prev => ({ ...prev, [qIndex]: optIndex }));
+  };
+
+  const finishTest = () => {
+    if (!activeTest) return;
+    const correct = activeTest.questions.filter((q, i) => answers[i] === q.correct).length;
+    const score = Math.round((correct / activeTest.questions.length) * 100);
+    setCompletedTests(prev => ({ ...prev, [activeTest.id]: score }));
+    setTestMode("results");
+  };
+
+  const exitTest = () => {
+    setTestMode("list");
+    setActiveTest(null);
+    setAnswers({});
+    setCurrentQ(0);
+  };
 
   const toggleItem = (ci: number, ii: number) => {
     setChecklistState(prev =>
@@ -313,45 +342,275 @@ export default function Index() {
           </div>
         )}
 
-        {active === "tests" && (
+        {active === "tests" && testMode === "list" && (
           <div className="animate-fade-in space-y-6">
             <div>
               <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
               <h1 className="text-2xl font-semibold">Тестирование</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Программы обучения по охране труда</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Программы обучения по охране труда — вопросы Минтруда РФ</p>
             </div>
 
             <div className="grid gap-3">
-              {TESTS.map((t, i) => (
-                <div key={i} className="bg-white border border-border rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:shadow-md">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <StatusBadge status={t.status} />
-                      {t.score && <span className="text-xs text-muted-foreground">Результат: <strong>{t.score}%</strong></span>}
+              {TESTS_DATA.map((t) => {
+                const score = completedTests[t.id];
+                const passed = score !== undefined && score >= t.passingScore;
+                const failed = score !== undefined && score < t.passingScore;
+                return (
+                  <div key={t.id} className="bg-white border border-border rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:shadow-md">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        {score === undefined && <StatusBadge status="pending" />}
+                        {passed && <StatusBadge status="passed" />}
+                        {failed && <StatusBadge status="failed" />}
+                        {score !== undefined && (
+                          <span className="text-xs text-muted-foreground">
+                            Результат: <strong className={passed ? "text-green-600" : "text-red-600"}>{score}%</strong>
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-medium text-sm mb-1">{t.title}</h3>
+                      <p className="text-xs text-muted-foreground mb-2">{t.description}</p>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Icon name="HelpCircle" size={12} fallback="Circle" />{t.questions.length} вопросов</span>
+                        <span className="flex items-center gap-1"><Icon name="Clock" size={12} fallback="Circle" />{t.time} мин</span>
+                        <span className="flex items-center gap-1"><Icon name="Target" size={12} fallback="Circle" />Порог: {t.passingScore}%</span>
+                      </div>
                     </div>
-                    <h3 className="font-medium text-sm mb-1">{t.title}</h3>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Icon name="HelpCircle" size={12} fallback="Circle" />{t.questions} вопросов</span>
-                      <span className="flex items-center gap-1"><Icon name="Clock" size={12} fallback="Circle" />{t.time}</span>
-                    </div>
+                    <button
+                      onClick={() => startTest(t)}
+                      className={`px-5 py-2.5 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                        passed
+                          ? "bg-muted text-foreground hover:bg-muted/80"
+                          : failed
+                          ? "bg-red-500 text-white hover:bg-red-600"
+                          : "bg-primary text-white hover:bg-primary/90"
+                      }`}
+                    >
+                      {passed ? "Пройти повторно" : failed ? "Пересдать" : "Начать тест"}
+                    </button>
                   </div>
-                  <button className={`px-4 py-2 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                    t.status === "passed"
-                      ? "bg-muted text-foreground hover:bg-muted/80"
-                      : "bg-primary text-white hover:bg-primary/90"
-                  }`}>
-                    {t.status === "passed" ? "Пройти повторно" : t.status === "in_progress" ? "Продолжить" : "Начать тест"}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
               <Icon name="Info" size={16} className="text-blue-600 mt-0.5 shrink-0" fallback="Circle" />
-              <p className="text-sm text-blue-800">Для допуска к работе необходимо пройти все обязательные тесты с результатом не менее <strong>80%</strong>. Тесты можно пересдавать неограниченное число раз.</p>
+              <p className="text-sm text-blue-800">Для допуска к работе необходимо пройти все обязательные тесты с результатом не менее <strong>80%</strong>. Тесты можно пересдавать неограниченное число раз. В конце каждого теста отображается разбор ошибок.</p>
             </div>
           </div>
         )}
+
+        {active === "tests" && testMode === "running" && activeTest && (
+          <div className="animate-fade-in max-w-2xl mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <button onClick={exitTest} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <Icon name="ArrowLeft" size={15} fallback="Circle" />
+                Выйти из теста
+              </button>
+              <span className="text-xs font-mono text-muted-foreground">
+                {currentQ + 1} / {activeTest.questions.length}
+              </span>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <h2 className="text-sm font-medium text-muted-foreground">{activeTest.title}</h2>
+                <span className="text-xs text-muted-foreground">{Math.round(((currentQ + 1) / activeTest.questions.length) * 100)}%</span>
+              </div>
+              <Progress value={((currentQ + 1) / activeTest.questions.length) * 100} className="h-1.5" />
+            </div>
+
+            <div className="bg-white border border-border rounded-xl p-6">
+              <div className="flex items-start gap-3 mb-6">
+                <span className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  {currentQ + 1}
+                </span>
+                <p className="text-base font-medium leading-relaxed">{activeTest.questions[currentQ].text}</p>
+              </div>
+
+              <div className="space-y-2.5">
+                {activeTest.questions[currentQ].options.map((opt, oi) => {
+                  const selected = answers[currentQ] === oi;
+                  return (
+                    <button
+                      key={oi}
+                      onClick={() => selectAnswer(currentQ, oi)}
+                      className={`w-full text-left px-4 py-3 rounded-lg border-2 text-sm transition-all duration-150 ${
+                        selected
+                          ? "border-primary bg-primary/5 text-primary font-medium"
+                          : "border-border hover:border-primary/40 hover:bg-muted/50"
+                      }`}
+                    >
+                      <span className={`inline-flex w-5 h-5 rounded-full border-2 mr-3 items-center justify-center text-xs font-bold shrink-0 ${
+                        selected ? "border-primary bg-primary text-white" : "border-muted-foreground/30"
+                      }`}>
+                        {String.fromCharCode(65 + oi)}
+                      </span>
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentQ(q => Math.max(0, q - 1))}
+                disabled={currentQ === 0}
+                className="px-4 py-2 text-sm rounded-md border border-border hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Назад
+              </button>
+
+              <div className="flex gap-1.5">
+                {activeTest.questions.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentQ(i)}
+                    className={`w-6 h-6 rounded text-xs font-medium transition-colors ${
+                      i === currentQ
+                        ? "bg-primary text-white"
+                        : answers[i] !== undefined
+                        ? "bg-primary/20 text-primary"
+                        : "bg-muted text-muted-foreground hover:bg-muted/70"
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+
+              {currentQ < activeTest.questions.length - 1 ? (
+                <button
+                  onClick={() => setCurrentQ(q => q + 1)}
+                  className="px-4 py-2 text-sm rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+                >
+                  Далее →
+                </button>
+              ) : (
+                <button
+                  onClick={finishTest}
+                  disabled={Object.keys(answers).length < activeTest.questions.length}
+                  className="px-4 py-2 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Завершить тест
+                </button>
+              )}
+            </div>
+
+            {currentQ === activeTest.questions.length - 1 && Object.keys(answers).length < activeTest.questions.length && (
+              <p className="text-xs text-center text-amber-600">
+                Осталось ответить на {activeTest.questions.length - Object.keys(answers).length} вопрос(а)
+              </p>
+            )}
+          </div>
+        )}
+
+        {active === "tests" && testMode === "results" && activeTest && (() => {
+          const correct = activeTest.questions.filter((q, i) => answers[i] === q.correct).length;
+          const score = Math.round((correct / activeTest.questions.length) * 100);
+          const passed = score >= activeTest.passingScore;
+          return (
+            <div className="animate-fade-in max-w-2xl mx-auto space-y-6">
+              <button onClick={exitTest} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <Icon name="ArrowLeft" size={15} fallback="Circle" />
+                К списку тестов
+              </button>
+
+              <div className={`rounded-xl border-2 p-6 text-center ${passed ? "border-green-300 bg-green-50" : "border-red-200 bg-red-50"}`}>
+                <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-2xl font-bold ${passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                  {score}%
+                </div>
+                <h2 className={`text-xl font-semibold mb-1 ${passed ? "text-green-800" : "text-red-700"}`}>
+                  {passed ? "Тест пройден!" : "Тест не пройден"}
+                </h2>
+                <p className={`text-sm mb-3 ${passed ? "text-green-700" : "text-red-600"}`}>
+                  {activeTest.title}
+                </p>
+                <div className="flex justify-center gap-6 text-sm">
+                  <div>
+                    <span className="font-bold text-green-700">{correct}</span>
+                    <span className="text-muted-foreground ml-1">правильных</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-red-600">{activeTest.questions.length - correct}</span>
+                    <span className="text-muted-foreground ml-1">ошибок</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">{activeTest.questions.length}</span>
+                    <span className="text-muted-foreground ml-1">всего</span>
+                  </div>
+                </div>
+                {!passed && (
+                  <p className="text-xs text-red-600 mt-3">Минимальный балл для прохождения: {activeTest.passingScore}%</p>
+                )}
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Icon name="BookOpen" size={15} className="text-primary" fallback="Circle" />
+                  Разбор ответов
+                </h3>
+                <div className="space-y-4">
+                  {activeTest.questions.map((q, i) => {
+                    const userAns = answers[i];
+                    const isCorrect = userAns === q.correct;
+                    return (
+                      <div key={i} className={`bg-white rounded-lg border-2 p-4 ${isCorrect ? "border-green-200" : "border-red-200"}`}>
+                        <div className="flex items-start gap-2.5 mb-3">
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${isCorrect ? "bg-green-100" : "bg-red-100"}`}>
+                            <Icon name={isCorrect ? "Check" : "X"} size={11} className={isCorrect ? "text-green-600" : "text-red-600"} fallback="Circle" />
+                          </div>
+                          <p className="text-sm font-medium leading-snug">{q.text}</p>
+                        </div>
+
+                        <div className="space-y-1.5 mb-3">
+                          {q.options.map((opt, oi) => {
+                            const isUserChoice = userAns === oi;
+                            const isRight = oi === q.correct;
+                            return (
+                              <div key={oi} className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs ${
+                                isRight ? "bg-green-50 text-green-800 font-medium" :
+                                isUserChoice && !isRight ? "bg-red-50 text-red-700 line-through" :
+                                "text-muted-foreground"
+                              }`}>
+                                <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-xs font-bold shrink-0 ${
+                                  isRight ? "border-green-500 bg-green-500 text-white" :
+                                  isUserChoice ? "border-red-400 bg-red-400 text-white" :
+                                  "border-muted-foreground/30"
+                                }`}>
+                                  {String.fromCharCode(65 + oi)}
+                                </span>
+                                {opt}
+                                {isRight && <Icon name="Check" size={12} className="text-green-600 ml-auto shrink-0" fallback="Check" />}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+                          <p className="text-xs text-blue-800 leading-relaxed">
+                            <span className="font-semibold">Пояснение: </span>
+                            {q.explanation}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => startTest(activeTest)} className="flex-1 py-2.5 text-sm rounded-md border border-border hover:bg-muted transition-colors font-medium">
+                  Пройти повторно
+                </button>
+                <button onClick={exitTest} className="flex-1 py-2.5 text-sm rounded-md bg-primary text-white hover:bg-primary/90 transition-colors font-medium">
+                  К списку тестов
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {active === "briefings" && (
           <div className="animate-fade-in space-y-6">
