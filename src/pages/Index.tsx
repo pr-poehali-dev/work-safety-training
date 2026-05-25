@@ -2,6 +2,8 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { TESTS_DATA, type TestData } from "@/data/tests";
+import { BRIEFINGS_DATA } from "@/data/briefings";
+import BriefingPlayer from "@/components/BriefingPlayer";
 
 type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "checklists" | "contacts";
 type TestMode = "list" | "running" | "results";
@@ -20,13 +22,6 @@ const NEWS = [
   { tag: "Новость", date: "23 мая 2026", title: "Обновлены требования по электробезопасности", desc: "Приказ Минтруда №123 вступает в силу с 1 июня 2026 года." },
   { tag: "Справка", date: "20 мая 2026", title: "Требования к СИЗ на производстве", desc: "Обновлённый справочник по средствам индивидуальной защиты." },
   { tag: "Новость", date: "15 мая 2026", title: "Плановая проверка ГИТ: что нужно знать", desc: "Чек-лист для подготовки к проверке государственной инспекции." },
-];
-
-const BRIEFINGS = [
-  { id: "intro", title: "Вводный инструктаж", desc: "Проводится при приёме на работу. Охватывает общие требования охраны труда.", duration: "45 мин", required: true, status: "done" },
-  { id: "primary", title: "Первичный инструктаж", desc: "Инструктаж на рабочем месте перед допуском к самостоятельной работе.", duration: "30 мин", required: true, status: "done" },
-  { id: "repeat", title: "Повторный инструктаж", desc: "Проводится не реже 1 раза в 6 месяцев для закрепления знаний.", duration: "30 мин", required: true, status: "due" },
-  { id: "target", title: "Целевой инструктаж", desc: "Перед выполнением разовых работ, не связанных с основными обязанностями.", duration: "20 мин", required: false, status: "pending" },
 ];
 
 const CHECKLISTS_DATA = [
@@ -88,6 +83,14 @@ export default function Index() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
   const [notification, setNotification] = useState(true);
+
+  // Briefing state
+  const [activeBriefingId, setActiveBriefingId] = useState<string | null>(null);
+  const [completedBriefings, setCompletedBriefings] = useState<Set<string>>(new Set(["intro", "primary"]));
+
+  const completeBriefing = (id: string) => {
+    setCompletedBriefings(prev => { const s = new Set(prev); s.add(id); return s; });
+  };
 
   // Test state
   const [testMode, setTestMode] = useState<TestMode>("list");
@@ -612,44 +615,90 @@ export default function Index() {
           );
         })()}
 
-        {active === "briefings" && (
+        {active === "briefings" && !activeBriefingId && (
           <div className="animate-fade-in space-y-6">
             <div>
               <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
               <h1 className="text-2xl font-semibold">Инструктажи</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Виды инструктажей по охране труда</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Полные программы с текстом, видео и интерактивными заданиями</p>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
-              {BRIEFINGS.map((b, i) => (
-                <div key={i} className={`bg-white border rounded-lg p-5 transition-all duration-200 hover:shadow-md ${b.status === "due" ? "border-amber-300" : "border-border"}`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <StatusBadge status={b.status} />
-                      {b.required && (
-                        <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+              {BRIEFINGS_DATA.map((b) => {
+                const isDone = completedBriefings.has(b.id);
+                const isDue = b.id === "repeat" && !isDone;
+                return (
+                  <div key={b.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isDue ? "border-amber-300" : "border-border"}`}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isDone
+                          ? <StatusBadge status="done" />
+                          : isDue
+                          ? <StatusBadge status="due" />
+                          : <StatusBadge status="pending" />
+                        }
+                        {b.required && (
+                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+                        )}
+                        {b.variants && (
+                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">2 варианта</span>
+                        )}
+                      </div>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
+                        <Icon name="Clock" size={12} fallback="Circle" />{b.duration} мин
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-base mb-1.5">{b.title}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed mb-4 flex-1">{b.subtitle}</p>
+
+                    <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
+                      {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length > 0 && (
+                        <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                          <Icon name="Play" size={11} fallback="Circle" />
+                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length} видео
+                        </span>
+                      )}
+                      {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length > 0 && (
+                        <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                          <Icon name="Zap" size={11} fallback="Circle" />
+                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length} заданий
+                        </span>
                       )}
                     </div>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
-                      <Icon name="Clock" size={12} fallback="Circle" />{b.duration}
-                    </span>
+
+                    <button
+                      onClick={() => setActiveBriefingId(b.id)}
+                      className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
+                        isDone
+                          ? "bg-muted text-foreground hover:bg-muted/80"
+                          : isDue
+                          ? "bg-amber-500 text-white hover:bg-amber-600"
+                          : "bg-primary text-white hover:bg-primary/90"
+                      }`}
+                    >
+                      {isDone ? "Пройти повторно" : isDue ? "Пройти (требуется)" : "Начать инструктаж"}
+                    </button>
                   </div>
-                  <h3 className="font-semibold text-base mb-2">{b.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">{b.desc}</p>
-                  <button className={`w-full py-2 text-sm rounded-md font-medium transition-colors ${
-                    b.status === "done"
-                      ? "bg-muted text-foreground hover:bg-muted/80"
-                      : b.status === "due"
-                      ? "bg-amber-500 text-white hover:bg-amber-600"
-                      : "bg-primary text-white hover:bg-primary/90"
-                  }`}>
-                    {b.status === "done" ? "Пройден — просмотреть" : b.status === "due" ? "Пройти (требуется)" : "Начать инструктаж"}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
+
+        {active === "briefings" && activeBriefingId && (() => {
+          const briefing = BRIEFINGS_DATA.find(b => b.id === activeBriefingId);
+          if (!briefing) return null;
+          return (
+            <BriefingPlayer
+              briefing={briefing}
+              onExit={() => setActiveBriefingId(null)}
+              onComplete={(id) => {
+                completeBriefing(id);
+                setActiveBriefingId(null);
+              }}
+            />
+          );
+        })()}
 
         {active === "cabinet" && (
           <div className="animate-fade-in space-y-6">
