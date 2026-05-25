@@ -270,9 +270,11 @@ function VideoBlock({ block, onDone }: { block: Extract<Block, { type: "video" }
       <div className="bg-black aspect-video w-full">
         <iframe
           className="w-full h-full"
-          src={`https://www.youtube.com/embed/${block.youtubeId}?rel=0`}
+          src={`https://rutube.ru/play/embed/${block.youtubeId}`}
           title={block.title}
           allowFullScreen
+          allow="clipboard-write; autoplay"
+          frameBorder="0"
         />
       </div>
       <div className="bg-white p-4">

@@ -164,10 +164,12 @@ export default function Index() {
               <Icon name="Menu" size={20} />
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-primary rounded flex items-center justify-center">
-                <Icon name="ShieldCheck" size={14} className="text-white" />
-              </div>
-              <span className="font-semibold text-base tracking-tight">ОхранаТруд</span>
+              <img
+                src="https://cdn.poehali.dev/projects/cd71ce52-bb4a-42e1-b3e8-36fe92953b9e/bucket/f6918456-1a71-48db-8e71-dd06833a8284.png"
+                alt="Логотип"
+                className="w-8 h-8 object-contain rounded-full"
+              />
+              <span className="font-semibold text-base tracking-tight hidden sm:block">ОхранаТруда-Безопасность</span>
             </div>
           </div>
 
@@ -201,10 +203,12 @@ export default function Index() {
         <div className="md:hidden fixed inset-0 z-50 bg-black/40" onClick={() => setSidebarOpen(false)}>
           <div className="bg-white w-64 h-full shadow-xl p-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-6 mt-1">
-              <div className="w-7 h-7 bg-primary rounded flex items-center justify-center">
-                <Icon name="ShieldCheck" size={14} className="text-white" />
-              </div>
-              <span className="font-semibold text-base">ОхранаТруд</span>
+              <img
+                src="https://cdn.poehali.dev/projects/cd71ce52-bb4a-42e1-b3e8-36fe92953b9e/bucket/f6918456-1a71-48db-8e71-dd06833a8284.png"
+                alt="Логотип"
+                className="w-8 h-8 object-contain rounded-full"
+              />
+              <span className="font-semibold text-sm leading-tight">ОхранаТруда-<br/>Безопасность</span>
             </div>
             {NAV_ITEMS.map(item => (
               <button
@@ -918,8 +922,12 @@ export default function Index() {
       <footer className="border-t border-border bg-white py-4 mt-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Icon name="ShieldCheck" size={14} className="text-primary" fallback="Shield" />
-            <span>ОхранаТруд · Платформа обучения по охране труда</span>
+            <img
+              src="https://cdn.poehali.dev/projects/cd71ce52-bb4a-42e1-b3e8-36fe92953b9e/bucket/f6918456-1a71-48db-8e71-dd06833a8284.png"
+              alt="Логотип"
+              className="w-6 h-6 object-contain rounded-full"
+            />
+            <span>ОхранаТруда-Безопасность · Платформа обучения</span>
           </div>
           <p className="text-xs text-muted-foreground">© 2026 · Все права защищены</p>
         </div>

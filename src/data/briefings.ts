@@ -92,8 +92,8 @@ const INTRO_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Введение в охрану труда",
-    youtubeId: "VEkUXWDCZBg",
-    duration: "12:34",
+    youtubeId: "4c733df4624293450e5f0d90dce5276d",
+    duration: "12:00",
     description: "Обзор основ охраны труда: законодательная база, права и обязанности работников и работодателей",
   },
   {
@@ -147,8 +147,8 @@ const INTRO_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Несчастные случаи на производстве — порядок действий",
-    youtubeId: "nCq0bT4IQPM",
-    duration: "8:22",
+    youtubeId: "a3a1edf3dc2a3f90a4f5bce4571b2adc",
+    duration: "9:00",
     description: "Что делать при несчастном случае: первые действия, извещение, оформление документов",
   },
   {
@@ -255,8 +255,8 @@ const PRIMARY_OFFICE_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Эргономика рабочего места и профилактика заболеваний",
-    youtubeId: "bCvBfFNe3ko",
-    duration: "7:15",
+    youtubeId: "62c42df3fcab5376d3f8011a34ce4630",
+    duration: "7:00",
     description: "Правильная посадка за компьютером, организация освещения, профилактика болей в спине и зрительного утомления",
   },
   {
@@ -308,8 +308,8 @@ const PRIMARY_ELECTRICIAN_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Электробезопасность. Основы для начинающих",
-    youtubeId: "0h9IjSBi3K4",
-    duration: "14:30",
+    youtubeId: "fbc7386b51873ae99cb150c9880f7098",
+    duration: "14:00",
     description: "Действие электрического тока на организм, защитные меры, безопасные методы работы в электроустановках",
   },
   {
@@ -363,8 +363,8 @@ const PRIMARY_ELECTRICIAN_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Первая помощь при поражении электрическим током",
-    youtubeId: "sOAJwTBLsLU",
-    duration: "6:50",
+    youtubeId: "006ea665d80d1349bceb73fa9493063b",
+    duration: "7:00",
     description: "Алгоритм освобождения пострадавшего от тока, оценка состояния, СЛР, вызов скорой помощи",
   },
   {
@@ -462,8 +462,8 @@ const REPEAT_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Первая помощь на производстве — базовый курс",
-    youtubeId: "kS4cY1xzCT8",
-    duration: "10:05",
+    youtubeId: "2bf8b4e58fb83e35908553fd2b1aa85a",
+    duration: "10:00",
     description: "Алгоритм оценки состояния пострадавшего, сердечно-лёгочная реанимация, кровотечения, переломы",
   },
   {
@@ -565,8 +565,8 @@ const TARGET_BLOCKS: Block[] = [
   {
     type: "video",
     title: "Требования безопасности при работах на высоте",
-    youtubeId: "HvAp2IVZhEM",
-    duration: "11:40",
+    youtubeId: "98b78a286a80f4f38b26e81741825c0a",
+    duration: "11:00",
     description: "СИЗ от падения с высоты, страховочные системы, работа с телескопическими подъёмниками, типичные нарушения",
   },
   {
