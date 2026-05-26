@@ -187,17 +187,20 @@ export default function Index() {
 
   const addUserTemplate = () => {
     if (!newTplTitle.trim()) return;
-    setUserTemplates(prev => [...prev, {
+    const newTpl = {
       id: `user_${Date.now()}`,
       title: newTplTitle.trim(),
-      description: "Добавлен вами",
+      description: "Создан вами",
       category: "Мои шаблоны",
-      content: newTplContent,
-      fields: [],
-    }]);
+      content: "",
+      fields: [] as import("@/data/infoData").TemplateField[],
+    };
+    setUserTemplates(prev => [...prev, newTpl]);
     setNewTplTitle("");
     setNewTplContent("");
     setAddingTemplate(false);
+    // Сразу открываем редактор
+    setEditTemplate(newTpl);
   };
 
   // Briefing state
@@ -718,48 +721,110 @@ export default function Index() {
                   <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
                       <p className="text-sm text-muted-foreground">Готовые шаблоны документов — заполняйте поля прямо на сайте</p>
                       <button onClick={() => setAddingTemplate(!addingTemplate)}
-                        className="flex items-center gap-1.5 text-xs bg-primary text-white rounded-lg px-3 py-2 hover:bg-primary/90 transition-colors">
-                        <Icon name="Plus" size={13} fallback="Plus" /> Добавить шаблон
+                        className="flex items-center gap-1.5 text-xs bg-primary text-white rounded-lg px-3 py-2 hover:bg-primary/90 transition-colors shrink-0">
+                        <Icon name="Plus" size={13} fallback="Plus" /> Создать свой шаблон
                       </button>
                     </div>
 
                     {addingTemplate && (
                       <div className="bg-white border-2 border-primary/30 rounded-xl p-5 space-y-3">
-                        <h3 className="font-medium text-sm">Новый шаблон</h3>
-                        <input value={newTplTitle} onChange={e => setNewTplTitle(e.target.value)}
-                          placeholder="Название документа" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
-                        <textarea value={newTplContent} onChange={e => setNewTplContent(e.target.value)}
-                          placeholder="Содержание шаблона..." rows={6}
-                          className="w-full border border-border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-primary resize-none" />
+                        <h3 className="font-medium text-sm flex items-center gap-2">
+                          <Icon name="FilePlus" size={15} className="text-primary" fallback="Circle" />
+                          Новый шаблон
+                        </h3>
+                        <p className="text-xs text-muted-foreground">Введите название и нажмите «Создать» — откроется редактор с форматированием</p>
+                        <input
+                          value={newTplTitle}
+                          onChange={e => setNewTplTitle(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && addUserTemplate()}
+                          placeholder="Название документа, например: Акт осмотра рабочего места"
+                          className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                        />
                         <div className="flex gap-2">
-                          <button onClick={addUserTemplate} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">Сохранить</button>
-                          <button onClick={() => setAddingTemplate(false)} className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors">Отмена</button>
+                          <button
+                            onClick={addUserTemplate}
+                            disabled={!newTplTitle.trim()}
+                            className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Создать и открыть редактор
+                          </button>
+                          <button onClick={() => { setAddingTemplate(false); setNewTplTitle(""); }}
+                            className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors">
+                            Отмена
+                          </button>
                         </div>
                       </div>
                     )}
 
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {[...TEMPLATES_DATA, ...userTemplates].map(tpl => (
-                        <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
-                          <div className="flex items-start justify-between mb-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{tpl.category}</span>
-                            {tpl.fields?.length > 0 && (
-                              <span className="text-xs text-green-600 flex items-center gap-1">
-                                <Icon name="PenLine" size={11} fallback="Circle" /> {tpl.fields.length} полей
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
-                          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setEditTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-1.5">
-                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить и скачать
-                          </button>
+                    {/* Мои шаблоны */}
+                    {userTemplates.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Мои шаблоны</p>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {userTemplates.map(tpl => (
+                            <div key={tpl.id} className="bg-white border-2 border-primary/20 rounded-xl p-5 flex flex-col">
+                              <div className="flex items-start justify-between mb-2 gap-2">
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{tpl.category}</span>
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Удалить шаблон «${tpl.title}»?`)) {
+                                      setUserTemplates(prev => prev.filter(t => t.id !== tpl.id));
+                                      // Удаляем сохранённые данные
+                                      try {
+                                        const all = JSON.parse(localStorage.getItem("templateValues") || "{}");
+                                        delete all[tpl.id];
+                                        localStorage.setItem("templateValues", JSON.stringify(all));
+                                      } catch { /* ignore */ }
+                                    }
+                                  }}
+                                  className="p-1 rounded-md hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors shrink-0"
+                                  title="Удалить шаблон"
+                                >
+                                  <Icon name="Trash2" size={13} fallback="Trash" />
+                                </button>
+                              </div>
+                              <h3 className="font-semibold text-sm mb-1 flex-1">{tpl.title}</h3>
+                              <p className="text-xs text-muted-foreground mb-4">Создан вами · Редактор с форматированием</p>
+                              <button
+                                onClick={() => { setEditTemplate(tpl); }}
+                                className="w-full py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-1.5"
+                              >
+                                <Icon name="FileEdit" size={13} fallback="Circle" /> Открыть редактор
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+                    )}
+
+                    {/* Готовые шаблоны */}
+                    <div>
+                      {userTemplates.length > 0 && (
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Готовые шаблоны</p>
+                      )}
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {TEMPLATES_DATA.map(tpl => (
+                          <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
+                            <div className="flex items-start justify-between mb-2">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{tpl.category}</span>
+                              {tpl.fields?.length > 0 && (
+                                <span className="text-xs text-green-600 flex items-center gap-1">
+                                  <Icon name="PenLine" size={11} fallback="Circle" /> {tpl.fields.length} полей
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
+                            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
+                            <button onClick={() => setEditTemplate(tpl)}
+                              className="w-full py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-1.5">
+                              <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить и скачать
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}
