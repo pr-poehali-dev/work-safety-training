@@ -148,6 +148,7 @@ export default function Index() {
   const [active, setActive] = useState<Section>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
+  const [checklistNewText, setChecklistNewText] = useState<string[]>(CHECKLISTS_DATA.map(() => ""));
   const [notification, setNotification] = useState(true);
 
   // News state
@@ -252,6 +253,23 @@ export default function Index() {
     );
   };
 
+  const addCheckItem = (ci: number, text: string) => {
+    if (!text.trim()) return;
+    setChecklistState(prev =>
+      prev.map((c, i) =>
+        i === ci ? { ...c, items: [...c.items, { text: text.trim(), done: false }] } : c
+      )
+    );
+  };
+
+  const removeCheckItem = (ci: number, ii: number) => {
+    setChecklistState(prev =>
+      prev.map((c, i) =>
+        i === ci ? { ...c, items: c.items.filter((_, j) => j !== ii) } : c
+      )
+    );
+  };
+
   const resetChecklists = () => setChecklistState(CHECKLISTS_DATA.map(c => ({ ...c, items: c.items.map(i => ({ ...i, done: false })) })));
 
   const navigate = (id: Section, opts?: { briefingId?: string; infoTab?: typeof INFO_TABS[number] }) => {
@@ -336,23 +354,22 @@ export default function Index() {
                   {user.fio.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()}
                 </button>
                 {avatarMenu && (
-                  <div className="absolute right-0 top-10 z-50 bg-white border border-border rounded-xl shadow-xl w-52 py-1 animate-fade-in">
+                  <div
+                    className="absolute right-0 top-10 z-[60] bg-white border border-border rounded-xl shadow-xl w-56 py-1 animate-fade-in"
+                    onClick={e => e.stopPropagation()}
+                  >
                     <div className="px-4 py-2.5 border-b border-border">
                       <p className="font-medium text-sm truncate">{user.fio}</p>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{user.role === "employer" ? "Работодатель" : "Сотрудник"}</p>
                     </div>
-                    <button onClick={() => { navigate("cabinet"); setAvatarMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                    <button
+                      onClick={() => { setAvatarMenu(false); navigate("cabinet"); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
                       <Icon name="UserCircle" size={15} fallback="Circle" />
                       Личный кабинет
                     </button>
-                    {user.role === "employer" && (
-                      <button onClick={() => { navigate("employer"); setAvatarMenu(false); }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
-                        <Icon name="Building2" size={15} fallback="Circle" />
-                        Панель работодателя
-                      </button>
-                    )}
                     <div className="border-t border-border mt-1">
                       <LogoutButton onDone={() => { setAvatarMenu(false); navigate("home"); }} />
                     </div>
@@ -1249,7 +1266,7 @@ export default function Index() {
             <div className="grid md:grid-cols-3 gap-4">
               {checklistState.map((cl, ci) => {
                 const done = cl.items.filter(i => i.done).length;
-                const pct = Math.round((done / cl.items.length) * 100);
+                const pct = cl.items.length > 0 ? Math.round((done / cl.items.length) * 100) : 0;
                 return (
                   <div key={ci} className="bg-white border border-border rounded-lg p-5">
                     <div className="flex items-center justify-between mb-1">
@@ -1259,22 +1276,67 @@ export default function Index() {
                     <div className="mb-4">
                       <Progress value={pct} className="h-1" />
                     </div>
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       {cl.items.map((item, ii) => (
-                        <div key={ii} className="flex items-start gap-2.5 cursor-pointer group" onClick={() => toggleItem(ci, ii)}>
-                          <div className={`w-4 h-4 rounded border-2 shrink-0 mt-0.5 flex items-center justify-center transition-colors ${
-                            item.done ? "bg-primary border-primary" : "border-border group-hover:border-primary/50"
-                          }`}>
+                        <div key={ii} className="flex items-start gap-2 group">
+                          <div
+                            className={`w-4 h-4 rounded border-2 shrink-0 mt-0.5 flex items-center justify-center transition-colors cursor-pointer ${
+                              item.done ? "bg-primary border-primary" : "border-border group-hover:border-primary/50"
+                            }`}
+                            onClick={() => toggleItem(ci, ii)}
+                          >
                             {item.done && <Icon name="Check" size={10} className="text-white" fallback="Check" />}
                           </div>
-                          <span className={`text-sm leading-snug select-none ${item.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                          <span
+                            className={`text-sm leading-snug select-none flex-1 cursor-pointer ${item.done ? "text-muted-foreground line-through" : "text-foreground"}`}
+                            onClick={() => toggleItem(ci, ii)}
+                          >
                             {item.text}
                           </span>
+                          {user && (
+                            <button
+                              onClick={() => removeCheckItem(ci, ii)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                              title="Удалить пункт"
+                            >
+                              <Icon name="X" size={13} fallback="X" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
-                    {pct === 100 && (
-                      <div className="mt-4 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-md px-3 py-2">
+
+                    {/* Добавление пункта — только для авторизованных */}
+                    {user && (
+                      <div className="mt-3 flex gap-1.5">
+                        <input
+                          value={checklistNewText[ci]}
+                          onChange={e => setChecklistNewText(prev => prev.map((v, i) => i === ci ? e.target.value : v))}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && checklistNewText[ci].trim()) {
+                              addCheckItem(ci, checklistNewText[ci]);
+                              setChecklistNewText(prev => prev.map((v, i) => i === ci ? "" : v));
+                            }
+                          }}
+                          placeholder="Добавить пункт..."
+                          className="flex-1 text-xs border border-border rounded-md px-2.5 py-1.5 focus:outline-none focus:border-primary min-w-0"
+                        />
+                        <button
+                          onClick={() => {
+                            if (checklistNewText[ci].trim()) {
+                              addCheckItem(ci, checklistNewText[ci]);
+                              setChecklistNewText(prev => prev.map((v, i) => i === ci ? "" : v));
+                            }
+                          }}
+                          className="shrink-0 px-2 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                        >
+                          <Icon name="Plus" size={13} fallback="Plus" />
+                        </button>
+                      </div>
+                    )}
+
+                    {pct === 100 && cl.items.length > 0 && (
+                      <div className="mt-3 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 rounded-md px-3 py-2">
                         <Icon name="CheckCircle" size={13} fallback="Check" />
                         Все пункты выполнены
                       </div>
@@ -1389,7 +1451,7 @@ export default function Index() {
 
       {/* Overlay для закрытия avatar-меню */}
       {avatarMenu && (
-        <div className="fixed inset-0 z-40" onClick={() => setAvatarMenu(false)} />
+        <div className="fixed inset-0 z-[55]" onClick={() => setAvatarMenu(false)} />
       )}
 
       <footer className="border-t border-border bg-white py-4 mt-8">
