@@ -91,7 +91,7 @@ def handler(event: dict, context) -> dict:
         if not user:
             return err("Не авторизован", 401)
 
-        # briefing_for_employee доступен любому авторизованному из компании
+        # briefing_for_employee и custom_test_for_employee доступны любому авторизованному из компании
         if action == "briefing_for_employee":
             import json as _json
             bid = qs.get("id")
@@ -111,6 +111,28 @@ def handler(event: dict, context) -> dict:
             blocks = [{"type": r[0], **_json.loads(r[1])} for r in cur.fetchall()]
             return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
                                     "duration": row[3], "blocks": blocks}})
+
+        if action == "custom_test_for_employee":
+            import json as _json
+            test_id = qs.get("id")
+            if not test_id:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, description, passing_score, time_limit FROM {SCHEMA}.custom_tests WHERE id=%s AND company_id=%s",
+                (int(test_id), user["company_id"]),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Тест не найден")
+            cur.execute(
+                f"SELECT text, options::text, correct, explanation FROM {SCHEMA}.custom_test_questions WHERE test_id=%s AND sort_order >= 0 ORDER BY sort_order",
+                (int(test_id),),
+            )
+            questions = []
+            for i, r in enumerate(cur.fetchall()):
+                questions.append({"id": i, "text": r[0], "options": _json.loads(r[1]), "correct": r[2], "explanation": r[3]})
+            return ok({"test": {"id": row[0], "title": row[1], "description": row[2],
+                                "passing_score": row[3], "time_limit": row[4], "questions": questions}})
 
         if user["role"] != "employer":
             return err("Доступ запрещён", 403)

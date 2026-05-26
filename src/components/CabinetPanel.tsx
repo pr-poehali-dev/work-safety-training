@@ -3,9 +3,9 @@ import Icon from "@/components/ui/icon";
 import { useAuth } from "@/contexts/AuthContext";
 import { TESTS_DATA } from "@/data/tests";
 
-export default function CabinetPanel({ onStartTest, onLogout }: { onStartTest: (testId: string) => void; onLogout?: () => void }) {
+export default function CabinetPanel({ onStartTest, onLogout, initialTab }: { onStartTest: (testId: string) => void; onLogout?: () => void; initialTab?: "profile" | "notifications" | "tests" }) {
   const { user, logout, notifications, unreadCount, assignedTests, markNotificationsRead, fetchNotifications } = useAuth();
-  const [tab, setTab] = useState<"profile" | "notifications" | "tests">("profile");
+  const [tab, setTab] = useState<"profile" | "notifications" | "tests">(initialTab ?? "profile");
 
   if (!user) return null;
 

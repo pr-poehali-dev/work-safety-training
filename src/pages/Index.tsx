@@ -464,6 +464,7 @@ export default function Index() {
 
   const [active, setActive] = useState<Section>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [cabinetInitialTab, setCabinetInitialTab] = useState<"profile" | "notifications" | "tests">("profile");
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
   const [checklistNewText, setChecklistNewText] = useState<string[]>(CHECKLISTS_DATA.map(() => ""));
   const [notification, setNotification] = useState(true);
@@ -694,11 +695,12 @@ export default function Index() {
     saveChecklist(next);
   };
 
-  const navigate = (id: Section, opts?: { briefingId?: string; infoTab?: typeof INFO_TABS[number] }) => {
+  const navigate = (id: Section, opts?: { briefingId?: string; infoTab?: typeof INFO_TABS[number]; cabinetTab?: "profile" | "notifications" | "tests" }) => {
     setActive(id);
     setSidebarOpen(false);
     if (opts?.briefingId) setActiveBriefingId(opts.briefingId);
     if (opts?.infoTab) switchInfoTab(opts.infoTab);
+    if (id === "cabinet") setCabinetInitialTab(opts?.cabinetTab ?? "profile");
   };
 
   return (
@@ -752,7 +754,7 @@ export default function Index() {
             {/* Колокол уведомлений */}
             {user && (
               <button
-                onClick={() => navigate("cabinet")}
+                onClick={() => navigate("cabinet", { cabinetTab: "notifications" })}
                 className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary relative"
               >
                 <Icon name="Bell" size={15} />
@@ -1870,6 +1872,7 @@ export default function Index() {
                 if (t) { startTest(t); navigate("tests"); }
               }}
               onLogout={() => navigate("home")}
+              initialTab={cabinetInitialTab}
             />
           ) : (
             <div className="animate-fade-in text-center py-24 space-y-4">
