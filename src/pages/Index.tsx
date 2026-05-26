@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { TESTS_DATA, type TestData } from "@/data/tests";
@@ -11,7 +11,7 @@ import {
   PROFRISK_TEMPLATES,
   type Template,
 } from "@/data/infoData";
-import TemplateEditor from "@/components/TemplateEditor";
+import TemplateEditor, { type SavedCard } from "@/components/TemplateEditor";
 import AuthModal from "@/components/AuthModal";
 import CabinetPanel from "@/components/CabinetPanel";
 import EmployerPanel from "@/components/EmployerPanel";
@@ -19,6 +19,7 @@ import DocumentsUploader from "@/components/DocumentsUploader";
 import CompanyDocsList from "@/components/CompanyDocsList";
 import CompanyContacts from "@/components/CompanyContacts";
 import CompanyChat from "@/components/CompanyChat";
+import EmployerSavedCards from "@/components/EmployerSavedCards";
 import { useAuth } from "@/contexts/AuthContext";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
@@ -95,6 +96,232 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${s.color}`}>
       {s.label}
     </span>
+  );
+}
+
+// ── Компонент раздела СОУТ / ПрофРисков ──────────────────────────────────────
+interface SoutSectionProps {
+  cardType: "sout" | "profrisk";
+  templates: Template[];
+  userRole?: string;
+  editTemplate: Template | null;
+  editSavedCard: SavedCard | null;
+  viewCard: { template: Template; values: Record<string, string> } | null;
+  onOpenTemplate: (tpl: Template) => void;
+  onOpenSaved: (card: SavedCard) => void;
+  onOpenView: (v: { template: Template; values: Record<string, string> }) => void;
+  onBack: () => void;
+  infoHint: ReactNode;
+}
+
+function SoutSection({ cardType, templates, userRole, editTemplate, editSavedCard, viewCard, onOpenTemplate, onOpenSaved, onOpenView, onBack, infoHint }: SoutSectionProps) {
+  const isSout = cardType === "sout";
+  const isEmployer = userRole === "employer";
+  const isEmployee = userRole === "employee";
+
+  // Если открыт редактор/просмотр — показываем его
+  if (editTemplate) {
+    return (
+      <TemplateEditor
+        template={editTemplate}
+        onBack={onBack}
+        userRole={isEmployer ? "employer" : "employee"}
+      />
+    );
+  }
+  if (editSavedCard) {
+    // Находим шаблон по template_id
+    const tpl = templates.find(t => t.id === editSavedCard.template_id) || templates[0];
+    return (
+      <TemplateEditor
+        template={{ ...tpl, id: editSavedCard.template_id, title: editSavedCard.title }}
+        onBack={onBack}
+        userRole="employer"
+        savedCard={editSavedCard}
+      />
+    );
+  }
+  if (viewCard) {
+    return (
+      <TemplateEditor
+        template={viewCard.template}
+        onBack={onBack}
+        userRole="employee"
+        readonlyValues={viewCard.values}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* ── РАБОТОДАТЕЛЬ ── */}
+      {isEmployer && (
+        <>
+          {/* Сохранённые карты */}
+          <div>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${isSout ? "text-green-700" : "text-amber-700"}`}>
+              <Icon name="FolderOpen" size={13} fallback="Circle" />
+              Сохранённые карты {isSout ? "СОУТ" : "ПрофРисков"}
+            </p>
+            <EmployerSavedCards cardType={cardType} onEdit={onOpenSaved} />
+          </div>
+
+          {/* Шаблоны для заполнения */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Создать новую карту</p>
+            {infoHint}
+            <div className="grid md:grid-cols-2 gap-4 mt-3">
+              {templates.map(tpl => (
+                <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSout ? "bg-green-100" : "bg-amber-100"}`}>
+                      <Icon name={isSout ? "ClipboardList" : "AlertOctagon"} size={16}
+                        className={isSout ? "text-green-700" : "text-amber-700"} fallback="Circle" />
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isSout ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                      {isSout ? "СОУТ" : "ПрофРиск"}
+                    </span>
+                    <span className={`text-xs ml-auto ${isSout ? "text-green-600" : "text-amber-600"}`}>{tpl.fields.length} полей</span>
+                  </div>
+                  <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
+                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
+                  <button onClick={() => onOpenTemplate(tpl)}
+                    className={`w-full py-2 text-sm rounded-lg text-white font-medium flex items-center justify-center gap-1.5 transition-colors ${isSout ? "bg-green-600 hover:bg-green-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+                    <Icon name="PenLine" size={13} fallback="Circle" />
+                    {isSout ? "Заполнить карту СОУТ" : "Заполнить карту рисков"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── СОТРУДНИК ── */}
+      {isEmployee && (
+        <EmployeeCardsView cardType={cardType} templates={templates} onView={onOpenView} />
+      )}
+
+      {/* ── НЕ АВТОРИЗОВАН / НЕТ РОЛИ ── */}
+      {!isEmployer && !isEmployee && (
+        <div>
+          {infoHint}
+          <div className="mt-4 grid md:grid-cols-2 gap-4">
+            {templates.map(tpl => (
+              <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
+                <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
+                <p className="text-xs text-muted-foreground mb-4">{tpl.description}</p>
+                <button onClick={() => onOpenTemplate(tpl)}
+                  className={`w-full py-2 text-sm rounded-lg text-white font-medium flex items-center justify-center gap-1.5 ${isSout ? "bg-green-600 hover:bg-green-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+                  <Icon name="PenLine" size={13} fallback="Circle" />
+                  {isSout ? "Заполнить карту СОУТ" : "Заполнить карту рисков"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Список карт для сотрудника (полученных от работодателя) ───────────────────
+const DOCS_URL_INLINE = "https://functions.poehali.dev/514ab62a-455e-4cf0-a4d2-03efb7296ff4";
+function getCookieInline(name: string) {
+  const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+interface EmployeeCardsViewProps {
+  cardType: "sout" | "profrisk";
+  templates: Template[];
+  onView: (v: { template: Template; values: Record<string, string> }) => void;
+}
+
+function EmployeeCardsView({ cardType, templates, onView }: EmployeeCardsViewProps) {
+  const [cards, setCards] = useState<SavedCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const isSout = cardType === "sout";
+
+  useEffect(() => {
+    const sid = getCookieInline("session_id");
+    const headers = { "Content-Type": "application/json", ...(sid ? { "X-Cookie": `session_id=${sid}` } : {}) };
+    fetch(`${DOCS_URL_INLINE}?action=card_list&card_type=${cardType}`, { headers })
+      .then(r => r.json())
+      .then(d => setCards(d.cards || []))
+      .catch(() => setCards([]))
+      .finally(() => setLoading(false));
+  }, [cardType]);
+
+  const markRead = async (cardId: number) => {
+    const sid = getCookieInline("session_id");
+    const headers = { "Content-Type": "application/json", ...(sid ? { "X-Cookie": `session_id=${sid}` } : {}) };
+    await fetch(`${DOCS_URL_INLINE}?action=card_mark_read`, {
+      method: "POST", headers, body: JSON.stringify({ card_id: cardId }),
+    });
+    setCards(prev => prev.map(c => c.card_id === cardId ? { ...c, read_at: new Date().toISOString() } as SavedCard & { read_at: string } : c));
+  };
+
+  if (loading) return <div className="space-y-2">{[1,2].map(i=><div key={i} className="h-16 bg-muted animate-pulse rounded-xl"/>)}</div>;
+
+  if (cards.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground border border-dashed border-border rounded-xl">
+        <Icon name="FileX" size={32} className="mx-auto mb-2 opacity-25" fallback="Circle" />
+        <p className="text-sm">Карты от работодателя пока не поступали</p>
+        <p className="text-xs mt-1 text-muted-foreground/60">Работодатель заполнит и отправит вам карту на ознакомление</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">Карты {isSout ? "СОУТ" : "профессиональных рисков"}, направленные вам работодателем</p>
+      {cards.map((card: SavedCard & { assigned_at?: string; read_at?: string | null }) => {
+        const tpl = templates.find(t => t.id === card.template_id) || templates[0];
+        const isRead = !!(card as Record<string, unknown>).read_at;
+        return (
+          <div key={card.card_id} className={`rounded-xl border p-4 ${isSout ? "bg-green-50/60 border-green-200" : "bg-amber-50/60 border-amber-200"}`}>
+            <div className="flex items-start gap-3">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isSout ? "bg-green-100" : "bg-amber-100"}`}>
+                <Icon name={isSout ? "ClipboardList" : "AlertOctagon"} size={18}
+                  className={isSout ? "text-green-700" : "text-amber-700"} fallback="Circle" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="font-semibold text-sm">{card.title}</p>
+                  {isRead ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
+                      <Icon name="CheckCircle" size={10} fallback="Check" /> Ознакомлен
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Требует ознакомления</span>
+                  )}
+                </div>
+                {(card as Record<string, unknown>).assigned_at && (
+                  <p className="text-xs text-muted-foreground">
+                    Получена: {new Date((card as Record<string, unknown>).assigned_at as string).toLocaleDateString("ru-RU")}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => { if (tpl) onView({ template: { ...tpl, title: card.title }, values: card.filled_values }); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border bg-white hover:bg-muted transition-colors font-medium">
+                <Icon name="Eye" size={13} fallback="Circle" /> Открыть карту
+              </button>
+              {!isRead && (
+                <button onClick={() => markRead(card.card_id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium text-white transition-colors ${isSout ? "bg-green-600 hover:bg-green-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+                  <Icon name="CheckCircle" size={13} fallback="Circle" /> Отметить ознакомленным
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -176,7 +403,10 @@ export default function Index() {
   type InfoTab = typeof INFO_TABS[number];
   const [infoTab, setInfoTab] = useState<InfoTab>("Новости");
   const [editTemplate, setEditTemplate] = useState<Template | null>(null);
-  const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setEditTemplate(null); setAddingTemplate(false); };
+  const [editSavedCard, setEditSavedCard] = useState<SavedCard | null>(null);
+  // Для сотрудника: просмотр карты, присланной работодателем
+  const [viewCard, setViewCard] = useState<{ template: Template; values: Record<string, string> } | null>(null);
+  const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setEditTemplate(null); setEditSavedCard(null); setViewCard(null); setAddingTemplate(false); };
   const [openDocGroup, setOpenDocGroup] = useState<string | null>(null);
   const [userTemplates, setUserTemplates] = useState<Template[]>(() => {
     try { return JSON.parse(localStorage.getItem("userTemplates") || "[]"); } catch { return []; }
@@ -851,104 +1081,46 @@ export default function Index() {
 
             {/* ── МОИ СОУТ ── */}
             {infoTab === "Мои СОУТ" && (
-              <div className="space-y-5">
-                {editTemplate ? (
-                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
-                ) : (
-                  <>
-                    {/* Документы от работодателя — только для сотрудников */}
-                    {user?.role === "employee" && (
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-2 flex items-center gap-1.5">
-                          <Icon name="Building2" size={13} fallback="Circle" /> От работодателя
-                        </p>
-                        <CompanyDocsList docType="sout" />
-                      </div>
-                    )}
-
-                    {/* Шаблоны для заполнения */}
-                    <div>
-                      {user?.role === "employee" && (
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Шаблоны для заполнения</p>
-                      )}
-                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 mb-3">
-                        <Icon name="Info" size={16} className="text-blue-600 shrink-0 mt-0.5" fallback="Circle" />
-                        <p className="text-sm text-blue-800">СОУТ проводится раз в 5 лет. Заполните карту по своему рабочему месту и скачайте готовый документ.</p>
-                      </div>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {SOUT_TEMPLATES.map(tpl => (
-                          <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
-                            <div className="flex items-center gap-2 mb-3">
-                              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                                <Icon name="ClipboardList" size={16} className="text-green-700" fallback="Circle" />
-                              </div>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">СОУТ</span>
-                              <span className="text-xs text-green-600 ml-auto">{tpl.fields.length} полей</span>
-                            </div>
-                            <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
-                            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                            <button onClick={() => setEditTemplate(tpl)}
-                              className="w-full py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-1.5">
-                              <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту СОУТ
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+              <SoutSection
+                cardType="sout"
+                templates={SOUT_TEMPLATES}
+                userRole={user?.role}
+                editTemplate={editTemplate}
+                editSavedCard={editSavedCard}
+                viewCard={viewCard}
+                onOpenTemplate={tpl => { setEditSavedCard(null); setViewCard(null); setEditTemplate(tpl); }}
+                onOpenSaved={card => { setEditTemplate(null); setViewCard(null); setEditSavedCard(card); }}
+                onOpenView={v => { setEditTemplate(null); setEditSavedCard(null); setViewCard(v); }}
+                onBack={() => { setEditTemplate(null); setEditSavedCard(null); setViewCard(null); }}
+                infoHint={
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+                    <Icon name="Info" size={16} className="text-blue-600 shrink-0 mt-0.5" fallback="Circle" />
+                    <p className="text-sm text-blue-800">СОУТ проводится раз в 5 лет. Заполните карту по рабочему месту и сохраните или скачайте готовый документ.</p>
+                  </div>
+                }
+              />
             )}
 
             {/* ── ПРОФРИСКИ ── */}
             {infoTab === "ПрофРиски" && (
-              <div className="space-y-5">
-                {editTemplate ? (
-                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
-                ) : (
-                  <>
-                    {/* Документы от работодателя — только для сотрудников */}
-                    {user?.role === "employee" && (
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-amber-700 mb-2 flex items-center gap-1.5">
-                          <Icon name="Building2" size={13} fallback="Circle" /> От работодателя
-                        </p>
-                        <CompanyDocsList docType="profrisk" />
-                      </div>
-                    )}
-
-                    {/* Шаблоны */}
-                    <div>
-                      {user?.role === "employee" && (
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Шаблоны для заполнения</p>
-                      )}
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 mb-3">
-                        <Icon name="AlertTriangle" size={16} className="text-amber-600 shrink-0 mt-0.5" fallback="Circle" />
-                        <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна (ст. 214 ТК РФ). Заполните карту и скачайте готовый документ.</p>
-                      </div>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {PROFRISK_TEMPLATES.map(tpl => (
-                          <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
-                            <div className="flex items-center gap-2 mb-3">
-                              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                                <Icon name="AlertOctagon" size={16} className="text-amber-700" fallback="Circle" />
-                              </div>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">ПрофРиск</span>
-                              <span className="text-xs text-amber-600 ml-auto">{tpl.fields.length} полей</span>
-                            </div>
-                            <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
-                            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                            <button onClick={() => setEditTemplate(tpl)}
-                              className="w-full py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium flex items-center justify-center gap-1.5">
-                              <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту рисков
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+              <SoutSection
+                cardType="profrisk"
+                templates={PROFRISK_TEMPLATES}
+                userRole={user?.role}
+                editTemplate={editTemplate}
+                editSavedCard={editSavedCard}
+                viewCard={viewCard}
+                onOpenTemplate={tpl => { setEditSavedCard(null); setViewCard(null); setEditTemplate(tpl); }}
+                onOpenSaved={card => { setEditTemplate(null); setViewCard(null); setEditSavedCard(card); }}
+                onOpenView={v => { setEditTemplate(null); setEditSavedCard(null); setViewCard(v); }}
+                onBack={() => { setEditTemplate(null); setEditSavedCard(null); setViewCard(null); }}
+                infoHint={
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+                    <Icon name="AlertTriangle" size={16} className="text-amber-600 shrink-0 mt-0.5" fallback="Circle" />
+                    <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна (ст. 214 ТК РФ). Заполните карту и сохраните или скачайте документ.</p>
+                  </div>
+                }
+              />
             )}
           </div>
         )}

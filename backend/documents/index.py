@@ -330,6 +330,145 @@ def handler(event: dict, context) -> dict:
             rows = cur.fetchall()
             return ok({"employees": [{"id": r[0], "fio": r[1], "email": r[2]} for r in rows]})
 
+        # ── КАРТЫ СОУТ / ПРОФРИСКОВ ──────────────────────────────────────────
+
+        # ?action=card_save — сохранить/обновить заполненную карту (только employer)
+        if action == "card_save":
+            if user["role"] != "employer":
+                return err("Только работодатель может сохранять карты", 403)
+            card_id = body.get("card_id")  # None = новая, иначе обновление
+            card_type = body.get("card_type", "")
+            template_id = body.get("template_id", "")
+            title = (body.get("title") or "").strip()
+            filled_values = body.get("filled_values", {})
+            if card_type not in ("sout", "profrisk"):
+                return err("card_type должен быть sout или profrisk")
+            if not title or not template_id:
+                return err("Укажите title и template_id")
+            import json as _json
+            if card_id:
+                cur.execute(
+                    f"""UPDATE {SCHEMA}.sout_cards SET title=%s, filled_values=%s, updated_at=NOW()
+                        WHERE id=%s AND company_id=%s AND employer_id=%s RETURNING id""",
+                    (title, _json.dumps(filled_values, ensure_ascii=False),
+                     int(card_id), company_id, user["id"]),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return err("Карта не найдена")
+                result_id = row[0]
+            else:
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.sout_cards
+                            (company_id, employer_id, card_type, template_id, title, filled_values)
+                        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (company_id, user["id"], card_type, template_id, title,
+                     _json.dumps(filled_values, ensure_ascii=False)),
+                )
+                result_id = cur.fetchone()[0]
+            conn.commit()
+            return ok({"ok": True, "card_id": result_id})
+
+        # ?action=card_list — список карт компании (employer) или назначенных (employee)
+        if action == "card_list":
+            card_type_filter = qs.get("card_type", "")
+            if user["role"] == "employer":
+                sql = f"""SELECT c.id, c.card_type, c.template_id, c.title,
+                                 c.filled_values::text, c.created_at::text, c.updated_at::text,
+                                 COALESCE(json_agg(
+                                     json_build_object('employee_id', a.employee_id,
+                                                       'fio', u.fio,
+                                                       'assigned_at', a.assigned_at::text,
+                                                       'read_at', a.read_at::text)
+                                 ) FILTER (WHERE a.id IS NOT NULL), '[]') as assignments
+                          FROM {SCHEMA}.sout_cards c
+                          LEFT JOIN {SCHEMA}.sout_card_assignments a ON a.card_id = c.id
+                          LEFT JOIN {SCHEMA}.users u ON u.id = a.employee_id
+                          WHERE c.company_id = %s"""
+                params = [company_id]
+                if card_type_filter:
+                    sql += " AND c.card_type = %s"
+                    params.append(card_type_filter)
+                sql += " GROUP BY c.id ORDER BY c.updated_at DESC"
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+                import json as _json
+                cards = [{"id": r[0], "card_type": r[1], "template_id": r[2],
+                          "title": r[3], "filled_values": _json.loads(r[4] or "{}"),
+                          "created_at": r[5], "updated_at": r[6], "assignments": r[7]}
+                         for r in rows]
+            else:
+                sql = f"""SELECT c.id, c.card_type, c.template_id, c.title,
+                                 c.filled_values::text, c.created_at::text,
+                                 a.assigned_at::text, a.read_at::text
+                          FROM {SCHEMA}.sout_card_assignments a
+                          JOIN {SCHEMA}.sout_cards c ON c.id = a.card_id
+                          WHERE a.employee_id = %s"""
+                params = [user["id"]]
+                if card_type_filter:
+                    sql += " AND c.card_type = %s"
+                    params.append(card_type_filter)
+                sql += " ORDER BY a.assigned_at DESC"
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+                import json as _json
+                cards = [{"id": r[0], "card_type": r[1], "template_id": r[2],
+                          "title": r[3], "filled_values": _json.loads(r[4] or "{}"),
+                          "created_at": r[5], "assigned_at": r[6], "read_at": r[7]}
+                         for r in rows]
+            return ok({"cards": cards})
+
+        # ?action=card_assign — отправить карту сотруднику(ам) (только employer)
+        if action == "card_assign":
+            if user["role"] != "employer":
+                return err("Только работодатель может отправлять карты", 403)
+            card_id = body.get("card_id")
+            employee_ids = body.get("employee_ids", [])
+            if not card_id or not employee_ids:
+                return err("Укажите card_id и employee_ids")
+            cur.execute(
+                f"SELECT id, title, card_type FROM {SCHEMA}.sout_cards WHERE id=%s AND company_id=%s",
+                (int(card_id), company_id),
+            )
+            card = cur.fetchone()
+            if not card:
+                return err("Карта не найдена")
+            assigned = 0
+            for eid in employee_ids:
+                cur.execute(
+                    f"SELECT id FROM {SCHEMA}.users WHERE id=%s AND company_id=%s AND role='employee'",
+                    (int(eid), company_id),
+                )
+                if not cur.fetchone():
+                    continue
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.sout_card_assignments (card_id, employee_id)
+                        VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                    (int(card_id), int(eid)),
+                )
+                type_label = "СОУТ" if card[2] == "sout" else "ПрофРисков"
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.notifications (user_id, title, body) VALUES (%s, %s, %s)",
+                    (int(eid), f"Новая карта {type_label} для ознакомления",
+                     f"Работодатель направил вам карту: «{card[1]}»"),
+                )
+                assigned += 1
+            conn.commit()
+            return ok({"ok": True, "assigned_to": assigned})
+
+        # ?action=card_mark_read — отметить карту как прочитанную (employee)
+        if action == "card_mark_read":
+            card_id = body.get("card_id")
+            if not card_id:
+                return err("Укажите card_id")
+            cur.execute(
+                f"""UPDATE {SCHEMA}.sout_card_assignments SET read_at=NOW()
+                    WHERE card_id=%s AND employee_id=%s AND read_at IS NULL""",
+                (int(card_id), user["id"]),
+            )
+            conn.commit()
+            return ok({"ok": True})
+
         # ── ПЕРЕПИСКА ────────────────────────────────────────────────────────
 
         # ?action=msg_unread — количество непрочитанных сообщений
