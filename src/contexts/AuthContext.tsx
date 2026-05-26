@@ -98,10 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sid = getCookie("session_id");
     return fetch(url, {
       ...opts,
-      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        ...(sid ? { Cookie: `session_id=${sid}`, Authorization: `Bearer ${sid}` } : {}),
+        ...(sid ? { "X-Cookie": `session_id=${sid}` } : {}),
         ...(opts.headers || {}),
       },
     });
