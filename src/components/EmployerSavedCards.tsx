@@ -46,7 +46,14 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await apiFetch(DOCS_URL, "card_list", {}, { card_type: cardType });
-    if (res.ok) { const d = await res.json(); setCards(d.cards || []); }
+    if (res.ok) {
+      const d = await res.json();
+      // Бэкенд возвращает "id", фронтенд ожидает "card_id"
+      setCards((d.cards || []).map((c: SavedCard & { id?: number }) => ({
+        ...c,
+        card_id: c.card_id ?? c.id,
+      })));
+    }
     setLoading(false);
   }, [cardType]);
 

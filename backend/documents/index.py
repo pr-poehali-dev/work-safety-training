@@ -394,7 +394,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
                 import json as _json
-                cards = [{"id": r[0], "card_type": r[1], "template_id": r[2],
+                cards = [{"card_id": r[0], "card_type": r[1], "template_id": r[2],
                           "title": r[3], "filled_values": _json.loads(r[4] or "{}"),
                           "created_at": r[5], "updated_at": r[6], "assignments": r[7],
                           "file_url": r[8], "file_name": r[9]}
@@ -414,7 +414,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
                 import json as _json
-                cards = [{"id": r[0], "card_type": r[1], "template_id": r[2],
+                cards = [{"card_id": r[0], "card_type": r[1], "template_id": r[2],
                           "title": r[3], "filled_values": _json.loads(r[4] or "{}"),
                           "created_at": r[5], "assigned_at": r[6], "read_at": r[7]}
                          for r in rows]
