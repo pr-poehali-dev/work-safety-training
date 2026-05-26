@@ -384,7 +384,7 @@ def handler(event: dict, context) -> dict:
                           FROM {SCHEMA}.sout_cards c
                           LEFT JOIN {SCHEMA}.sout_card_assignments a ON a.card_id = c.id
                           LEFT JOIN {SCHEMA}.users u ON u.id = a.employee_id
-                          WHERE c.company_id = %s"""
+                          WHERE c.company_id = %s AND c.template_id NOT LIKE '_deleted_%%'"""
                 params = [company_id]
                 if card_type_filter:
                     sql += " AND c.card_type = %s"
@@ -455,6 +455,30 @@ def handler(event: dict, context) -> dict:
                 assigned += 1
             conn.commit()
             return ok({"ok": True, "assigned_to": assigned})
+
+        # ?action=card_delete — удалить карту (только employer, мягкое удаление через обнуление)
+        if action == "card_delete":
+            if user["role"] != "employer":
+                return err("Только работодатель может удалять карты", 403)
+            card_id = body.get("card_id")
+            if not card_id:
+                return err("Укажите card_id")
+            # Снимаем все назначения
+            cur.execute(
+                f"UPDATE {SCHEMA}.sout_card_assignments SET read_at=NOW() WHERE card_id=%s AND read_at IS NULL",
+                (int(card_id),),
+            )
+            # Помечаем карту как удалённую через обновление title (настоящий DELETE запрещён)
+            cur.execute(
+                f"""UPDATE {SCHEMA}.sout_cards SET title = '[УДАЛЕНО] ' || title,
+                        template_id = '_deleted_' || template_id
+                    WHERE id=%s AND company_id=%s AND employer_id=%s""",
+                (int(card_id), company_id, user["id"]),
+            )
+            if cur.rowcount == 0:
+                return err("Карта не найдена или нет доступа")
+            conn.commit()
+            return ok({"ok": True})
 
         # ?action=card_mark_read — отметить карту как прочитанную (employee)
         if action == "card_mark_read":
