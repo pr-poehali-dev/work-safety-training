@@ -101,12 +101,8 @@ export default function EmployerPanel() {
   if (!user || user.role !== "employer") return null;
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div>
-        <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Панель работодателя</p>
-        <h1 className="text-2xl font-semibold">Управление сотрудниками</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">{user.company_name} · {employees.length} сотрудников</p>
-      </div>
+    <div className="space-y-5">
+      <p className="text-sm text-muted-foreground">{employees.length} сотрудников в компании</p>
 
       {/* Toast */}
       {toast && (

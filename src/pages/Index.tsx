@@ -15,6 +15,9 @@ import TemplateEditor from "@/components/TemplateEditor";
 import AuthModal from "@/components/AuthModal";
 import CabinetPanel from "@/components/CabinetPanel";
 import EmployerPanel from "@/components/EmployerPanel";
+import DocumentsUploader from "@/components/DocumentsUploader";
+import CompanyDocsList from "@/components/CompanyDocsList";
+import CompanyContacts from "@/components/CompanyContacts";
 import { useAuth } from "@/contexts/AuthContext";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
@@ -91,6 +94,36 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${s.color}`}>
       {s.label}
     </span>
+  );
+}
+
+function EmployerSection() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState<"staff" | "docs">("staff");
+  return (
+    <div className="animate-fade-in space-y-5">
+      <div>
+        <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Панель работодателя</p>
+        <h1 className="text-2xl font-semibold">Управление</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">{user?.company_name}</p>
+      </div>
+      <div className="flex gap-1 border-b border-border pb-0">
+        {([
+          { id: "staff", label: "Сотрудники и тесты", icon: "Users" },
+          { id: "docs", label: "Документы СОУТ / ПрофРиски", icon: "Files" },
+        ] as const).map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+              tab === t.id ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            <Icon name={t.icon} size={14} fallback="Circle" />
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "staff" && <EmployerPanel />}
+      {tab === "docs" && <DocumentsUploader />}
+    </div>
   );
 }
 
@@ -718,33 +751,49 @@ export default function Index() {
 
             {/* ── МОИ СОУТ ── */}
             {infoTab === "Мои СОУТ" && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {editTemplate ? (
                   <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
-                      <Icon name="Info" size={16} className="text-blue-600 shrink-0 mt-0.5" fallback="Circle" />
-                      <p className="text-sm text-blue-800">СОУТ проводится раз в 5 лет. Заполните карту по своему рабочему месту и скачайте готовый документ.</p>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {SOUT_TEMPLATES.map(tpl => (
-                        <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                              <Icon name="ClipboardList" size={16} className="text-green-700" fallback="Circle" />
+                    {/* Документы от работодателя — только для сотрудников */}
+                    {user?.role === "employee" && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-green-700 mb-2 flex items-center gap-1.5">
+                          <Icon name="Building2" size={13} fallback="Circle" /> От работодателя
+                        </p>
+                        <CompanyDocsList docType="sout" />
+                      </div>
+                    )}
+
+                    {/* Шаблоны для заполнения */}
+                    <div>
+                      {user?.role === "employee" && (
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Шаблоны для заполнения</p>
+                      )}
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 mb-3">
+                        <Icon name="Info" size={16} className="text-blue-600 shrink-0 mt-0.5" fallback="Circle" />
+                        <p className="text-sm text-blue-800">СОУТ проводится раз в 5 лет. Заполните карту по своему рабочему месту и скачайте готовый документ.</p>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {SOUT_TEMPLATES.map(tpl => (
+                          <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                                <Icon name="ClipboardList" size={16} className="text-green-700" fallback="Circle" />
+                              </div>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">СОУТ</span>
+                              <span className="text-xs text-green-600 ml-auto">{tpl.fields.length} полей</span>
                             </div>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">СОУТ</span>
-                            <span className="text-xs text-green-600 ml-auto">{tpl.fields.length} полей</span>
+                            <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
+                            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
+                            <button onClick={() => setEditTemplate(tpl)}
+                              className="w-full py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-1.5">
+                              <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту СОУТ
+                            </button>
                           </div>
-                          <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
-                          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setEditTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-1.5">
-                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту СОУТ
-                          </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}
@@ -753,33 +802,49 @@ export default function Index() {
 
             {/* ── ПРОФРИСКИ ── */}
             {infoTab === "ПрофРиски" && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {editTemplate ? (
                   <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
-                      <Icon name="AlertTriangle" size={16} className="text-amber-600 shrink-0 mt-0.5" fallback="Circle" />
-                      <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна (ст. 214 ТК РФ). Заполните карту и скачайте готовый документ.</p>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {PROFRISK_TEMPLATES.map(tpl => (
-                        <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                              <Icon name="AlertOctagon" size={16} className="text-amber-700" fallback="Circle" />
+                    {/* Документы от работодателя — только для сотрудников */}
+                    {user?.role === "employee" && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-amber-700 mb-2 flex items-center gap-1.5">
+                          <Icon name="Building2" size={13} fallback="Circle" /> От работодателя
+                        </p>
+                        <CompanyDocsList docType="profrisk" />
+                      </div>
+                    )}
+
+                    {/* Шаблоны */}
+                    <div>
+                      {user?.role === "employee" && (
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Шаблоны для заполнения</p>
+                      )}
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 mb-3">
+                        <Icon name="AlertTriangle" size={16} className="text-amber-600 shrink-0 mt-0.5" fallback="Circle" />
+                        <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна (ст. 214 ТК РФ). Заполните карту и скачайте готовый документ.</p>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {PROFRISK_TEMPLATES.map(tpl => (
+                          <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                                <Icon name="AlertOctagon" size={16} className="text-amber-700" fallback="Circle" />
+                              </div>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">ПрофРиск</span>
+                              <span className="text-xs text-amber-600 ml-auto">{tpl.fields.length} полей</span>
                             </div>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">ПрофРиск</span>
-                            <span className="text-xs text-amber-600 ml-auto">{tpl.fields.length} полей</span>
+                            <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
+                            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
+                            <button onClick={() => setEditTemplate(tpl)}
+                              className="w-full py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium flex items-center justify-center gap-1.5">
+                              <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту рисков
+                            </button>
                           </div>
-                          <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
-                          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setEditTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium flex items-center justify-center gap-1.5">
-                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту рисков
-                          </button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}
@@ -1164,7 +1229,7 @@ export default function Index() {
 
         {active === "employer" && (
           user?.role === "employer" ? (
-            <EmployerPanel />
+            <EmployerSection />
           ) : (
             <div className="animate-fade-in text-center py-24">
               <Icon name="ShieldOff" size={48} className="mx-auto text-muted-foreground/30 mb-4" fallback="Circle" />
@@ -1236,69 +1301,81 @@ export default function Index() {
         )}
 
         {active === "contacts" && (
-          <div className="animate-fade-in space-y-6">
-            <div>
-              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
-              <h1 className="text-2xl font-semibold">Контакты</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Служба охраны труда и поддержка</p>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="bg-white border border-border rounded-lg p-5 space-y-4">
-                <h2 className="font-semibold text-sm">Служба охраны труда</h2>
-                {[
-                  { icon: "User", label: "Специалист по ОТ", value: "Петрова Марина Сергеевна" },
-                  { icon: "Phone", label: "Телефон", value: "+7 (495) 123-45-67 доб. 201" },
-                  { icon: "Mail", label: "E-mail", value: "ot@company.ru" },
-                  { icon: "MapPin", label: "Кабинет", value: "Корпус А, каб. 214" },
-                  { icon: "Clock", label: "Приём", value: "Пн–Пт, 9:00–17:00" },
-                ].map((c, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-7 h-7 bg-primary/10 rounded-md flex items-center justify-center shrink-0">
-                      <Icon name={c.icon} size={13} className="text-primary" fallback="Circle" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">{c.label}</p>
-                      <p className="text-sm font-medium mt-0.5">{c.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-white border border-border rounded-lg p-5">
-                  <h2 className="font-semibold text-sm mb-4">Написать обращение</h2>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Тема обращения</label>
-                      <select className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground">
-                        <option>Вопрос по инструктажу</option>
-                        <option>Вопрос по тестированию</option>
-                        <option>Сообщить об опасности</option>
-                        <option>Другое</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Сообщение</label>
-                      <textarea className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground resize-none h-24" placeholder="Опишите ваш вопрос..." />
-                    </div>
-                    <button className="w-full bg-primary text-white py-2 text-sm rounded-md font-medium hover:bg-primary/90 transition-colors">
-                      Отправить
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-                  <Icon name="AlertTriangle" size={16} className="text-amber-600 mt-0.5 shrink-0" fallback="Circle" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-800">Экстренная ситуация?</p>
-                    <p className="text-xs text-amber-700 mt-0.5">Вызов экстренных служб: <strong>112</strong></p>
-                    <p className="text-xs text-amber-700">Внутренняя служба безопасности: <strong>доб. 911</strong></p>
-                  </div>
-                </div>
+          !user ? (
+            /* Незарегистрированным — запрет */
+            <div className="animate-fade-in text-center py-24 space-y-4">
+              <Icon name="Lock" size={48} className="mx-auto text-muted-foreground/30" fallback="Circle" />
+              <p className="font-semibold text-lg">Раздел доступен только зарегистрированным</p>
+              <p className="text-sm text-muted-foreground">Войдите или создайте аккаунт, чтобы увидеть контакты службы охраны труда вашей компании</p>
+              <div className="flex gap-3 justify-center mt-4">
+                <button onClick={() => setAuthModal("login")} className="px-5 py-2.5 rounded-xl border border-primary text-primary hover:bg-primary/5 font-medium text-sm">Войти</button>
+                <button onClick={() => setAuthModal("register")} className="px-5 py-2.5 rounded-xl bg-primary text-white hover:bg-primary/90 font-medium text-sm">Зарегистрироваться</button>
               </div>
             </div>
-          </div>
+          ) : !user.company_id ? (
+            /* Пользователь без компании */
+            <div className="animate-fade-in text-center py-24">
+              <Icon name="Building2" size={48} className="mx-auto text-muted-foreground/30 mb-4" fallback="Circle" />
+              <p className="font-semibold">Компания не привязана</p>
+              <p className="text-sm text-muted-foreground mt-1">Обратитесь к работодателю для добавления в компанию</p>
+            </div>
+          ) : (
+            <div className="animate-fade-in space-y-6">
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
+                <h1 className="text-2xl font-semibold">Контакты</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Служба охраны труда · {user.company_name}
+                  {user.role === "employer" && (
+                    <span className="ml-2 text-xs text-primary">(вы можете редактировать)</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <CompanyContacts
+                  companyId={user.company_id}
+                  companyName={user.company_name || ""}
+                />
+
+                <div className="space-y-4">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                    <Icon name="AlertTriangle" size={16} className="text-amber-600 mt-0.5 shrink-0" fallback="Circle" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">Экстренная ситуация?</p>
+                      <p className="text-xs text-amber-700 mt-0.5">Вызов экстренных служб: <strong>112</strong></p>
+                      <p className="text-xs text-amber-700">Скорая: <strong>103</strong> · Пожарная: <strong>101</strong></p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-border rounded-xl p-5">
+                    <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                      <Icon name="MessageSquare" size={15} className="text-primary" fallback="Circle" />
+                      Написать специалисту по ОТ
+                    </h2>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Тема</label>
+                        <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:border-primary">
+                          <option>Вопрос по инструктажу</option>
+                          <option>Вопрос по тестированию</option>
+                          <option>Сообщить об опасности</option>
+                          <option>Другое</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Сообщение</label>
+                        <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background resize-none h-24 focus:outline-none focus:border-primary" placeholder="Опишите ваш вопрос..." />
+                      </div>
+                      <button className="w-full bg-primary text-white py-2 text-sm rounded-lg font-medium hover:bg-primary/90 transition-colors">
+                        Отправить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
         )}
       </main>
 

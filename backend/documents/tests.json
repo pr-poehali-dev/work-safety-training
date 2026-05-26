@@ -1,0 +1,1 @@
+{"tests": [{"name": "Unauthorized list", "method": "GET", "path": "/?action=list", "expectedStatus": 401, "expectedBody": {"error": "Не авторизован"}, "bodyMatcher": "partial"}, {"name": "Contacts get empty", "method": "GET", "path": "/?action=contacts_get&company_id=999999", "expectedStatus": 200, "expectedBody": {"contacts": {}}, "bodyMatcher": "partial"}]}
