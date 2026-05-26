@@ -1,12 +1,15 @@
 """
-Аутентификация: регистрация, вход, выход, профиль, список компаний.
-Роутинг через query-параметр: ?action=register|login|logout|me|companies
+Аутентификация: регистрация, вход, выход, профиль, список компаний, восстановление пароля.
+Роутинг через query-параметр: ?action=register|login|logout|me|companies|forgot_password|reset_password
 """
 import json
 import os
 import hashlib
 import secrets
+import smtplib
 import psycopg2
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
 CORS = {
@@ -34,6 +37,42 @@ def err(msg: str, code: int = 400):
 
 def hash_pw(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
+
+
+def send_reset_email(to_email: str, fio: str, reset_url: str):
+    host = os.environ.get("SMTP_HOST", "")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", "")
+    password = os.environ.get("SMTP_PASSWORD", "")
+    if not host or not user:
+        return False
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Восстановление пароля — ОхранаТруда-Безопасность"
+    msg["From"] = user
+    msg["To"] = to_email
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+      <h2 style="color:#1a56db;margin-bottom:8px;">Восстановление пароля</h2>
+      <p style="color:#374151;">Здравствуйте, <b>{fio}</b>!</p>
+      <p style="color:#374151;">Вы запросили сброс пароля на платформе <b>ОхранаТруда-Безопасность</b>.</p>
+      <p style="color:#374151;">Нажмите кнопку ниже для установки нового пароля. Ссылка действует <b>1 час</b>.</p>
+      <a href="{reset_url}" style="display:inline-block;margin:16px 0;padding:12px 28px;background:#1a56db;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+        Сбросить пароль
+      </a>
+      <p style="color:#6b7280;font-size:13px;">Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо.</p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;">
+      <p style="color:#9ca3af;font-size:12px;">ОхранаТруда-Безопасность · Платформа обучения</p>
+    </div>
+    """
+    msg.attach(MIMEText(html, "html", "utf-8"))
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.sendmail(user, to_email, msg.as_string())
+        return True
+    except Exception:
+        return False
 
 
 def get_session_id(event: dict) -> str | None:
@@ -86,7 +125,10 @@ def handler(event: dict, context) -> dict:
                 "company_name": row[6],
             }})
 
-        body = json.loads(event.get("body") or "{}")
+        raw_body = event.get("body") or "{}"
+        body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+        if isinstance(body, str):
+            body = json.loads(body) if body else {}
 
         # POST ?action=register
         if action == "register":
@@ -194,7 +236,64 @@ def handler(event: dict, context) -> dict:
             cookie = "session_id=; Path=/; Max-Age=0"
             return ok({"ok": True}, cookie)
 
-        return err(f"Неизвестное действие: '{action}'. Укажите ?action=companies|me|register|login|logout", 400)
+        # POST ?action=forgot_password — отправить письмо с ссылкой сброса
+        if action == "forgot_password":
+            email = (body.get("email") or "").strip().lower()
+            if not email:
+                return err("Укажите email")
+            cur.execute(f"SELECT id, fio FROM {SCHEMA}.users WHERE email = %s", (email,))
+            row = cur.fetchone()
+            # Всегда возвращаем успех — не раскрываем наличие email в системе
+            if not row:
+                return ok({"ok": True})
+            user_id, fio = row[0], row[1]
+            token = secrets.token_urlsafe(48)
+            expires = datetime.now() + timedelta(hours=1)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.password_resets (token, user_id, expires_at) VALUES (%s, %s, %s)",
+                (token, user_id, expires),
+            )
+            conn.commit()
+            # Строим ссылку на фронтенд
+            origin = event.get("headers", {}).get("Origin", "https://work-safety-training.poehali.dev")
+            reset_url = f"{origin}?reset_token={token}"
+            sent = send_reset_email(email, fio, reset_url)
+            return ok({"ok": True, "sent": sent})
+
+        # POST ?action=reset_password — установить новый пароль по токену
+        if action == "reset_password":
+            token = (body.get("token") or "").strip()
+            new_password = body.get("password") or ""
+            if not token or not new_password:
+                return err("Укажите токен и новый пароль")
+            if len(new_password) < 6:
+                return err("Пароль должен быть не менее 6 символов")
+            cur.execute(
+                f"""SELECT user_id FROM {SCHEMA}.password_resets
+                    WHERE token = %s AND expires_at > NOW() AND used_at IS NULL""",
+                (token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Ссылка недействительна или устарела")
+            user_id = row[0]
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET password_hash = %s WHERE id = %s",
+                (hash_pw(new_password), user_id),
+            )
+            cur.execute(
+                f"UPDATE {SCHEMA}.password_resets SET used_at = NOW() WHERE token = %s",
+                (token,),
+            )
+            # Инвалидируем все активные сессии пользователя
+            cur.execute(
+                f"UPDATE {SCHEMA}.sessions SET expires_at = NOW() WHERE user_id = %s",
+                (user_id,),
+            )
+            conn.commit()
+            return ok({"ok": True})
+
+        return err(f"Неизвестное действие: '{action}'. Укажите ?action=companies|me|register|login|logout|forgot_password|reset_password", 400)
 
     finally:
         cur.close()

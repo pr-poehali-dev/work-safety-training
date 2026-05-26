@@ -374,8 +374,18 @@ function LogoutButton({ onDone }: { onDone: () => void }) {
 
 export default function Index() {
   const { user, unreadCount, loading: authLoading, completeTest } = useAuth();
-  const [authModal, setAuthModal] = useState<false | "login" | "register">(false);
+  const [authModal, setAuthModal] = useState<false | "login" | "register" | "forgot" | "reset">(false);
+  const [resetToken, setResetToken] = useState("");
   const [avatarMenu, setAvatarMenu] = useState(false);
+
+  // Автооткрытие модалки сброса пароля при ?reset_token=...
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("reset_token");
+    if (token) {
+      setResetToken(token);
+      setAuthModal("reset");
+    }
+  }, []);
   const avatarMenuRef = useRef<HTMLDivElement>(null);
 
   // Закрываем меню при клике вне него
@@ -1810,7 +1820,8 @@ export default function Index() {
       {authModal && (
         <AuthModal
           initialMode={authModal}
-          onClose={() => setAuthModal(false)}
+          resetToken={resetToken}
+          onClose={() => { setAuthModal(false); setResetToken(""); }}
         />
       )}
 
