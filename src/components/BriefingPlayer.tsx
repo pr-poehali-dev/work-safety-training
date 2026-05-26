@@ -265,12 +265,27 @@ function TaskQuiz({ block, onDone }: { block: TaskQuizBlock; onDone: () => void 
 // ─── Блок видео ───────────────────────────────────────────────────────────────
 function VideoBlock({ block, onDone }: { block: Extract<Block, { type: "video" }>; onDone: () => void }) {
   const [watched, setWatched] = useState(false);
+
+  // Определяем src iframe
+  let iframeSrc = "";
+  if (block.vkVideo) {
+    const [oid, vid] = block.vkVideo.split("_");
+    iframeSrc = `https://vk.com/video_ext.php?oid=${oid}&id=${vid}&hd=2&autoplay=0`;
+  } else if (block.youtubeId) {
+    iframeSrc = `https://rutube.ru/play/embed/${block.youtubeId}`;
+  }
+
+  const handleWatched = () => {
+    setWatched(true);
+    onDone();
+  };
+
   return (
     <div className="rounded-xl border border-border overflow-hidden">
       <div className="bg-black aspect-video w-full">
         <iframe
           className="w-full h-full"
-          src={`https://rutube.ru/play/embed/${block.youtubeId}`}
+          src={iframeSrc}
           title={block.title}
           allowFullScreen
           allow="clipboard-write; autoplay"
@@ -278,26 +293,23 @@ function VideoBlock({ block, onDone }: { block: Extract<Block, { type: "video" }
         />
       </div>
       <div className="bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Icon name="Play" size={13} className="text-primary" fallback="Circle" />
-              <span className="text-xs text-muted-foreground font-mono">{block.duration}</span>
-            </div>
-            <h3 className="font-semibold text-sm">{block.title}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{block.description}</p>
-          </div>
+        <div className="flex items-center gap-2 mb-1">
+          <Icon name="Play" size={13} className="text-primary" fallback="Circle" />
+          <span className="text-xs text-muted-foreground font-mono">{block.duration}</span>
         </div>
+        <h3 className="font-semibold text-sm">{block.title}</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">{block.description}</p>
         {!watched ? (
           <button
-            onClick={() => setWatched(true)}
-            className="mt-3 w-full py-2 text-sm rounded-md border border-primary text-primary hover:bg-primary/5 transition-colors font-medium"
+            onClick={handleWatched}
+            className="mt-3 w-full py-2 text-sm rounded-md bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-2"
           >
+            <Icon name="CheckCircle" size={15} fallback="Circle" />
             Видео просмотрено, продолжить →
           </button>
         ) : (
-          <div className="mt-3 flex items-center gap-2 text-xs text-green-700">
-            <Icon name="CheckCircle" size={14} fallback="Check" />
+          <div className="mt-3 flex items-center gap-2 text-xs text-green-700 font-medium">
+            <Icon name="CheckCircle" size={14} className="text-green-600" fallback="Check" />
             Просмотрено
           </div>
         )}
