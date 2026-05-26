@@ -12,6 +12,10 @@ import {
   type Template,
 } from "@/data/infoData";
 import TemplateEditor from "@/components/TemplateEditor";
+import AuthModal from "@/components/AuthModal";
+import CabinetPanel from "@/components/CabinetPanel";
+import EmployerPanel from "@/components/EmployerPanel";
+import { useAuth } from "@/contexts/AuthContext";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
 
@@ -23,17 +27,17 @@ interface NewsItem {
   date: string;
 }
 
-type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "checklists" | "contacts";
+type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "employer" | "checklists" | "contacts";
 type TestMode = "list" | "running" | "results";
 
-const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
+const NAV_ITEMS: { id: Section; label: string; icon: string; employerOnly?: boolean }[] = [
   { id: "home", label: "Главная", icon: "LayoutDashboard" },
   { id: "info", label: "Информация", icon: "BookOpen" },
   { id: "tests", label: "Тестирование", icon: "ClipboardCheck" },
   { id: "briefings", label: "Инструктажи", icon: "Users" },
-  { id: "cabinet", label: "Личный кабинет", icon: "UserCircle" },
   { id: "checklists", label: "Чек-листы", icon: "ListChecks" },
   { id: "contacts", label: "Контакты", icon: "MessageSquare" },
+  { id: "employer", label: "Сотрудники", icon: "Building2", employerOnly: true },
 ];
 
 const CHECKLISTS_DATA = [
@@ -90,7 +94,24 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function LogoutButton({ onDone }: { onDone: () => void }) {
+  const { logout } = useAuth();
+  return (
+    <button
+      onClick={async () => { await logout(); onDone(); }}
+      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted text-red-600 transition-colors text-left"
+    >
+      <Icon name="LogOut" size={15} fallback="Circle" />
+      Выйти
+    </button>
+  );
+}
+
 export default function Index() {
+  const { user, unreadCount, loading: authLoading, completeTest } = useAuth();
+  const [authModal, setAuthModal] = useState<false | "login" | "register">(false);
+  const [avatarMenu, setAvatarMenu] = useState(false);
+
   const [active, setActive] = useState<Section>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
@@ -119,10 +140,16 @@ export default function Index() {
   const [editTemplate, setEditTemplate] = useState<Template | null>(null);
   const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setEditTemplate(null); setAddingTemplate(false); };
   const [openDocGroup, setOpenDocGroup] = useState<string | null>(null);
-  const [userTemplates, setUserTemplates] = useState<Template[]>([]);
+  const [userTemplates, setUserTemplates] = useState<Template[]>(() => {
+    try { return JSON.parse(localStorage.getItem("userTemplates") || "[]"); } catch { return []; }
+  });
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [newTplTitle, setNewTplTitle] = useState("");
   const [newTplContent, setNewTplContent] = useState("");
+
+  useEffect(() => {
+    localStorage.setItem("userTemplates", JSON.stringify(userTemplates));
+  }, [userTemplates]);
 
   const addUserTemplate = () => {
     if (!newTplTitle.trim()) return;
@@ -132,6 +159,7 @@ export default function Index() {
       description: "Добавлен вами",
       category: "Мои шаблоны",
       content: newTplContent,
+      fields: [],
     }]);
     setNewTplTitle("");
     setNewTplContent("");
@@ -170,6 +198,8 @@ export default function Index() {
     const score = Math.round((correct / activeTest.questions.length) * 100);
     setCompletedTests(prev => ({ ...prev, [activeTest.id]: score }));
     setTestMode("results");
+    // Сохраняем результат если назначен работодателем
+    if (user) completeTest(activeTest.id, score);
   };
 
   const exitTest = () => {
@@ -230,7 +260,7 @@ export default function Index() {
           </div>
 
           <nav className="hidden md:flex items-center gap-1">
-            {NAV_ITEMS.map(item => (
+            {NAV_ITEMS.filter(item => !item.employerOnly || user?.role === "employer").map(item => (
               <button
                 key={item.id}
                 onClick={() => navigate(item.id)}
@@ -246,11 +276,65 @@ export default function Index() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <button className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary relative">
-              <Icon name="Bell" size={15} />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-            </button>
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">ИВ</div>
+            {/* Колокол уведомлений */}
+            {user && (
+              <button
+                onClick={() => navigate("cabinet")}
+                className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary relative"
+              >
+                <Icon name="Bell" size={15} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Аватар / кнопка входа */}
+            {authLoading ? (
+              <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+            ) : user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setAvatarMenu(v => !v)}
+                  className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold hover:bg-primary/90 transition-colors"
+                >
+                  {user.fio.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()}
+                </button>
+                {avatarMenu && (
+                  <div className="absolute right-0 top-10 z-50 bg-white border border-border rounded-xl shadow-xl w-52 py-1 animate-fade-in">
+                    <div className="px-4 py-2.5 border-b border-border">
+                      <p className="font-medium text-sm truncate">{user.fio}</p>
+                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                    </div>
+                    <button onClick={() => { navigate("cabinet"); setAvatarMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                      <Icon name="UserCircle" size={15} fallback="Circle" />
+                      Личный кабинет
+                    </button>
+                    {user.role === "employer" && (
+                      <button onClick={() => { navigate("employer"); setAvatarMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left">
+                        <Icon name="Building2" size={15} fallback="Circle" />
+                        Панель работодателя
+                      </button>
+                    )}
+                    <div className="border-t border-border mt-1">
+                      <LogoutButton onDone={() => { setAvatarMenu(false); navigate("home"); }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setAuthModal("login")}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium"
+              >
+                <Icon name="LogIn" size={14} fallback="Circle" />
+                Войти
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -266,7 +350,7 @@ export default function Index() {
               />
               <span className="font-semibold text-sm leading-tight">ОхранаТруда-<br/>Безопасность</span>
             </div>
-            {NAV_ITEMS.map(item => (
+            {NAV_ITEMS.filter(item => !item.employerOnly || user?.role === "employer").map(item => (
               <button
                 key={item.id}
                 onClick={() => navigate(item.id)}
@@ -278,6 +362,21 @@ export default function Index() {
                 {item.label}
               </button>
             ))}
+            <div className="border-t border-border mt-2 pt-2">
+              {user ? (
+                <button onClick={() => navigate("cabinet")}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm mb-1 text-left hover:bg-muted">
+                  <Icon name="UserCircle" size={16} fallback="Circle" />
+                  Личный кабинет
+                </button>
+              ) : (
+                <button onClick={() => { setSidebarOpen(false); setAuthModal("login"); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-primary font-medium text-left">
+                  <Icon name="LogIn" size={16} fallback="Circle" />
+                  Войти / Регистрация
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -286,10 +385,31 @@ export default function Index() {
 
         {active === "home" && (
           <div className="animate-fade-in space-y-8">
-            <div>
-              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Добро пожаловать</p>
-              <h1 className="text-2xl font-semibold text-foreground mb-1">Платформа охраны труда</h1>
-              <p className="text-muted-foreground text-sm">Иванов Владимир · Специалист по ОТ · Отдел: Производство</p>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Добро пожаловать</p>
+                <h1 className="text-2xl font-semibold text-foreground mb-1">Платформа охраны труда</h1>
+                {user ? (
+                  <p className="text-muted-foreground text-sm">
+                    {user.fio} · {user.role === "employer" ? "Работодатель" : "Сотрудник"}
+                    {user.company_name && ` · ${user.company_name}`}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-sm">Войдите или зарегистрируйтесь для полного доступа</p>
+                )}
+              </div>
+              {!user && (
+                <div className="flex gap-2">
+                  <button onClick={() => setAuthModal("login")}
+                    className="px-4 py-2 text-sm border border-primary text-primary rounded-lg hover:bg-primary/5 transition-colors font-medium">
+                    Войти
+                  </button>
+                  <button onClick={() => setAuthModal("register")}
+                    className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium">
+                    Регистрация
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1024,89 +1144,33 @@ export default function Index() {
         })()}
 
         {active === "cabinet" && (
-          <div className="animate-fade-in space-y-6">
-            <div>
-              <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Личный кабинет</p>
-              <h1 className="text-2xl font-semibold">Моё обучение</h1>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="md:col-span-1 bg-white border border-border rounded-lg p-5">
-                <div className="flex flex-col items-center text-center">
-                  <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-2xl font-bold mb-3">ИВ</div>
-                  <h2 className="font-semibold">Иванов Владимир</h2>
-                  <p className="text-sm text-muted-foreground">Специалист по ОТ</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Отдел: Производство</p>
-                  <div className="mt-4 w-full pt-4 border-t border-border space-y-2.5 text-left">
-                    {[
-                      { label: "Дата приёма", value: "12.03.2024" },
-                      { label: "Группа по ЭБ", value: "II" },
-                      { label: "Следующий инструктаж", value: "08.06.2026" },
-                    ].map((r, i) => (
-                      <div key={i} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">{r.label}</span>
-                        <span className="font-medium">{r.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="md:col-span-2 space-y-4">
-                <div className="bg-white border border-border rounded-lg p-5">
-                  <h2 className="font-semibold text-sm mb-4">Статистика обучения</h2>
-                  <div className="grid grid-cols-3 gap-3 mb-5">
-                    {[
-                      { label: "Тестов пройдено", value: "3/8", icon: "ClipboardCheck" },
-                      { label: "Инструктажей", value: "2/4", icon: "Users" },
-                      { label: "Средний балл", value: "87%", icon: "TrendingUp" },
-                    ].map((s, i) => (
-                      <div key={i} className="text-center p-3 bg-muted/50 rounded-lg">
-                        <Icon name={s.icon} size={18} className="text-primary mx-auto mb-1.5" fallback="Circle" />
-                        <div className="font-semibold text-base">{s.value}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{s.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { label: "Общий прогресс обучения", value: 55 },
-                      { label: "Обязательные инструктажи", value: 50 },
-                      { label: "Тестирование", value: 38 },
-                    ].map((p, i) => (
-                      <div key={i}>
-                        <div className="flex justify-between text-xs mb-1.5">
-                          <span className="text-muted-foreground">{p.label}</span>
-                          <span className="font-medium">{p.value}%</span>
-                        </div>
-                        <Progress value={p.value} className="h-1.5" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white border border-border rounded-lg p-5">
-                  <h2 className="font-semibold text-sm mb-3">История действий</h2>
-                  <div className="space-y-1">
-                    {[
-                      { action: "Пройден тест", detail: "Общие требования охраны труда — 90%", date: "20.05.2026", icon: "ClipboardCheck", color: "text-green-600" },
-                      { action: "Вводный инструктаж", detail: "Завершён и подписан", date: "12.03.2024", icon: "CheckCircle", color: "text-green-600" },
-                      { action: "Первичный инструктаж", detail: "Завершён и подписан", date: "12.03.2024", icon: "CheckCircle", color: "text-green-600" },
-                    ].map((a, i) => (
-                      <div key={i} className="flex items-center gap-3 py-2.5 border-b border-border last:border-0">
-                        <Icon name={a.icon} size={15} className={a.color} fallback="Circle" />
-                        <div className="flex-1 text-sm">
-                          <span className="font-medium">{a.action}</span>
-                          <span className="text-muted-foreground"> — {a.detail}</span>
-                        </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">{a.date}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+          user ? (
+            <CabinetPanel onStartTest={(testId) => {
+              const t = TESTS_DATA.find(td => td.id === testId);
+              if (t) { startTest(t); navigate("tests"); }
+            }} />
+          ) : (
+            <div className="animate-fade-in text-center py-24 space-y-4">
+              <Icon name="UserCircle" size={48} className="mx-auto text-muted-foreground/30" fallback="Circle" />
+              <p className="font-semibold text-lg">Войдите в аккаунт</p>
+              <p className="text-sm text-muted-foreground">Для доступа к личному кабинету необходима авторизация</p>
+              <div className="flex gap-3 justify-center mt-4">
+                <button onClick={() => setAuthModal("login")} className="px-5 py-2.5 rounded-xl border border-primary text-primary hover:bg-primary/5 font-medium text-sm">Войти</button>
+                <button onClick={() => setAuthModal("register")} className="px-5 py-2.5 rounded-xl bg-primary text-white hover:bg-primary/90 font-medium text-sm">Зарегистрироваться</button>
               </div>
             </div>
-          </div>
+          )
+        )}
+
+        {active === "employer" && (
+          user?.role === "employer" ? (
+            <EmployerPanel />
+          ) : (
+            <div className="animate-fade-in text-center py-24">
+              <Icon name="ShieldOff" size={48} className="mx-auto text-muted-foreground/30 mb-4" fallback="Circle" />
+              <p className="font-semibold">Доступ только для работодателей</p>
+            </div>
+          )
         )}
 
         {active === "checklists" && (
@@ -1237,6 +1301,19 @@ export default function Index() {
           </div>
         )}
       </main>
+
+      {/* AuthModal */}
+      {authModal && (
+        <AuthModal
+          initialMode={authModal}
+          onClose={() => setAuthModal(false)}
+        />
+      )}
+
+      {/* Overlay для закрытия avatar-меню */}
+      {avatarMenu && (
+        <div className="fixed inset-0 z-40" onClick={() => setAvatarMenu(false)} />
+      )}
 
       <footer className="border-t border-border bg-white py-4 mt-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">

@@ -7,10 +7,28 @@ interface Props {
   onBack: () => void;
 }
 
+const STORAGE_KEY = "templateValues";
+
+function loadSaved(id: string): Record<string, string> {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    return all[id] || {};
+  } catch { return {}; }
+}
+
+function saveTpl(id: string, vals: Record<string, string>) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    all[id] = vals;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
+
 export default function TemplateEditor({ template, onBack }: Props) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() => loadSaved(template.id));
   const [preview, setPreview] = useState(template.content);
   const [tab, setTab] = useState<"form" | "preview">("form");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     let result = template.content;
@@ -21,8 +39,15 @@ export default function TemplateEditor({ template, onBack }: Props) {
     setPreview(result);
   }, [values, template]);
 
-  const set = (key: string, val: string) =>
-    setValues(prev => ({ ...prev, [key]: val }));
+  const set = (key: string, val: string) => {
+    setValues(prev => {
+      const next = { ...prev, [key]: val };
+      saveTpl(template.id, next);
+      return next;
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
 
   const download = () => {
     const filled = template.fields.reduce((txt, f) => {
@@ -75,7 +100,14 @@ export default function TemplateEditor({ template, onBack }: Props) {
       {/* Форма */}
       {tab === "form" && (
         <div className="bg-white border border-border rounded-xl p-5 space-y-4">
-          <p className="text-xs text-muted-foreground">Заполните поля — документ будет обновляться в реальном времени</p>
+          <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Заполните поля — данные сохраняются автоматически</p>
+          {saved && (
+            <span className="text-xs text-green-600 flex items-center gap-1 animate-fade-in">
+              <Icon name="Check" size={12} fallback="Check" /> Сохранено
+            </span>
+          )}
+        </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
             {template.fields.map(field => (
@@ -135,13 +167,20 @@ export default function TemplateEditor({ template, onBack }: Props) {
             ))}
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-3 pt-2 flex-wrap">
             <button
               onClick={() => setTab("preview")}
               className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/5 transition-colors font-medium"
             >
               <Icon name="Eye" size={14} fallback="Circle" />
               Предпросмотр
+            </button>
+            <button
+              onClick={() => { setValues({}); saveTpl(template.id, {}); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <Icon name="RotateCcw" size={13} fallback="Circle" />
+              Очистить
             </button>
             <button
               onClick={download}

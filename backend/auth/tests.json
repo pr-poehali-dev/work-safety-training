@@ -1,0 +1,1 @@
+{"tests": [{"name": "GET companies", "method": "GET", "path": "/companies", "expectedStatus": 200, "expectedBody": {"companies": []}, "bodyMatcher": "partial"}]}
