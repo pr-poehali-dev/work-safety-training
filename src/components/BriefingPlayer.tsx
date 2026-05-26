@@ -280,6 +280,54 @@ function VideoBlock({ block, onDone }: { block: Extract<Block, { type: "video" }
     onDone();
   };
 
+  // Дзен-видео: нет iframe, только кнопка-ссылка
+  if (block.dzenUrl) {
+    return (
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 aspect-video w-full flex flex-col items-center justify-center gap-4 p-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+            <Icon name="Play" size={28} className="text-white ml-1" fallback="Circle" />
+          </div>
+          <div>
+            <p className="text-white font-semibold text-sm mb-1">{block.title}</p>
+            <p className="text-white/60 text-xs">{block.duration} · Яндекс Дзен</p>
+          </div>
+          <a
+            href={block.dzenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 rounded-lg bg-[#FFCC00] text-black font-semibold text-sm hover:bg-yellow-300 transition-colors flex items-center gap-2"
+          >
+            <Icon name="ExternalLink" size={14} fallback="Circle" />
+            Смотреть на Дзен
+          </a>
+        </div>
+        <div className="bg-white p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Icon name="Play" size={13} className="text-primary" fallback="Circle" />
+            <span className="text-xs text-muted-foreground font-mono">{block.duration}</span>
+          </div>
+          <h3 className="font-semibold text-sm">{block.title}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{block.description}</p>
+          {!watched ? (
+            <button
+              onClick={handleWatched}
+              className="mt-3 w-full py-2 text-sm rounded-md bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-2"
+            >
+              <Icon name="CheckCircle" size={15} fallback="Circle" />
+              Видео просмотрено, продолжить →
+            </button>
+          ) : (
+            <div className="mt-3 flex items-center gap-2 text-xs text-green-700 font-medium">
+              <Icon name="CheckCircle" size={14} className="text-green-600" fallback="Check" />
+              Просмотрено
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-border overflow-hidden">
       <div className="bg-black aspect-video w-full">
