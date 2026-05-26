@@ -507,13 +507,13 @@ def handler(event: dict, context) -> dict:
                 aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
             )
             s3.put_object(Bucket=S3_BUCKET, Key=key, Body=raw, ContentType=content_type)
-            cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            card_file_url = cdn_url(key)
             cur.execute(
                 f"UPDATE {SCHEMA}.sout_cards SET file_url=%s, file_name=%s, updated_at=NOW() WHERE id=%s",
-                (cdn_url, file_name, int(card_id)),
+                (card_file_url, file_name, int(card_id)),
             )
             conn.commit()
-            return ok({"ok": True, "file_url": cdn_url, "file_name": file_name})
+            return ok({"ok": True, "file_url": card_file_url, "file_name": file_name})
 
         # ?action=card_mark_read — отметить карту как прочитанную (employee)
         if action == "card_mark_read":
