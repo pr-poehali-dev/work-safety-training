@@ -1,1 +1,1 @@
-{"tests": [{"name": "Unauthorized access", "method": "GET", "path": "/notifications", "expectedStatus": 401, "expectedBody": {"error": "Не авторизован"}, "bodyMatcher": "partial"}]}
+{"tests": [{"name": "Unauthorized access", "method": "GET", "path": "/?action=notifications", "expectedStatus": 401, "expectedBody": {"error": "Не авторизован"}, "bodyMatcher": "partial"}]}

@@ -93,12 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const sid = () => getCookie("session_id");
+
   const fetchMe = async () => {
     try {
-      const sid = getCookie("session_id");
-      if (!sid) { setLoading(false); return; }
-      const res = await fetch(`${AUTH_URL}/me`, {
-        headers: { Cookie: `session_id=${sid}` },
+      const s = sid();
+      if (!s) { setLoading(false); return; }
+      const res = await fetch(`${AUTH_URL}?action=me`, {
+        headers: { "X-Cookie": `session_id=${s}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -123,55 +125,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.id]);
 
-  const login = async (email: string, password: string): Promise<string | null> => {
-    const res = await fetch(`${AUTH_URL}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) return data.error || "Ошибка входа";
+  const applyCookie = (res: Response) => {
     const setCookie = res.headers.get("X-Set-Cookie");
     if (setCookie) {
       const [cookiePart] = setCookie.split(";");
-      document.cookie = cookiePart + "; Path=/; Max-Age=2592000";
+      const [name, value] = cookiePart.split("=");
+      document.cookie = `${name}=${value}; Path=/; Max-Age=2592000; SameSite=Lax`;
     }
-    setUser(data.user);
-    return null;
+    // Также читаем session_id из тела ответа если есть
+  };
+
+  const login = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`${AUTH_URL}?action=login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "Ошибка входа";
+      applyCookie(res);
+      // Сохраняем session_id напрямую из тела если cookie не пришёл
+      if (data.session_id) {
+        document.cookie = `session_id=${data.session_id}; Path=/; Max-Age=2592000; SameSite=Lax`;
+      }
+      setUser(data.user);
+      return null;
+    } catch {
+      return "Ошибка соединения с сервером";
+    }
   };
 
   const register = async (regData: RegisterData): Promise<string | null> => {
-    const res = await fetch(`${AUTH_URL}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(regData),
-    });
-    const data = await res.json();
-    if (!res.ok) return data.error || "Ошибка регистрации";
-    const setCookie = res.headers.get("X-Set-Cookie");
-    if (setCookie) {
-      const [cookiePart] = setCookie.split(";");
-      document.cookie = cookiePart + "; Path=/; Max-Age=2592000";
+    try {
+      const res = await fetch(`${AUTH_URL}?action=register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regData),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "Ошибка регистрации";
+      applyCookie(res);
+      if (data.session_id) {
+        document.cookie = `session_id=${data.session_id}; Path=/; Max-Age=2592000; SameSite=Lax`;
+      }
+      setUser(data.user);
+      return null;
+    } catch {
+      return "Ошибка соединения с сервером";
     }
-    setUser(data.user);
-    return null;
   };
 
   const logout = async () => {
-    const sid = getCookie("session_id");
-    await fetch(`${AUTH_URL}/logout`, {
+    const s = sid();
+    await fetch(`${AUTH_URL}?action=logout`, {
       method: "POST",
-      headers: { Cookie: `session_id=${sid}` },
-    });
+      headers: { "X-Cookie": `session_id=${s}`, "Content-Type": "application/json" },
+    }).catch(() => {});
     document.cookie = "session_id=; Path=/; Max-Age=0";
     setUser(null);
   };
 
   const fetchNotifications = async () => {
     try {
-      const sid = getCookie("session_id");
-      const res = await fetch(`${EMPLOYEE_URL}/notifications`, {
-        headers: { Cookie: `session_id=${sid}` },
+      const s = sid();
+      if (!s) return;
+      const res = await fetch(`${EMPLOYEE_URL}?action=notifications`, {
+        headers: { "X-Cookie": `session_id=${s}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -182,10 +202,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const markNotificationsRead = async () => {
     try {
-      const sid = getCookie("session_id");
-      await fetch(`${EMPLOYEE_URL}/notifications/read`, {
+      const s = sid();
+      if (!s) return;
+      await fetch(`${EMPLOYEE_URL}?action=read`, {
         method: "POST",
-        headers: { Cookie: `session_id=${sid}`, "Content-Type": "application/json" },
+        headers: { "X-Cookie": `session_id=${s}`, "Content-Type": "application/json" },
       });
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch { /* ignore */ }
@@ -193,9 +214,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchAssignedTests = async () => {
     try {
-      const sid = getCookie("session_id");
-      const res = await fetch(`${EMPLOYEE_URL}/assigned`, {
-        headers: { Cookie: `session_id=${sid}` },
+      const s = sid();
+      if (!s) return;
+      const res = await fetch(`${EMPLOYEE_URL}?action=assigned`, {
+        headers: { "X-Cookie": `session_id=${s}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -206,10 +228,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completeTest = async (test_id: string, score: number) => {
     try {
-      const sid = getCookie("session_id");
-      await fetch(`${EMPLOYEE_URL}/complete`, {
+      const s = sid();
+      if (!s) return;
+      await fetch(`${EMPLOYEE_URL}?action=complete`, {
         method: "POST",
-        headers: { Cookie: `session_id=${sid}`, "Content-Type": "application/json" },
+        headers: { "X-Cookie": `session_id=${s}`, "Content-Type": "application/json" },
         body: JSON.stringify({ test_id, score }),
       });
       await fetchAssignedTests();
@@ -217,10 +240,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getCompanies = async (): Promise<Company[]> => {
-    const res = await fetch(`${AUTH_URL}/companies`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.companies || [];
+    try {
+      const res = await fetch(`${AUTH_URL}?action=companies`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.companies || [];
+    } catch {
+      return [];
+    }
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;

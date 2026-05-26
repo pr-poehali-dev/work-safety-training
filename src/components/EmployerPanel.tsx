@@ -33,17 +33,21 @@ export default function EmployerPanel() {
     return match ? decodeURIComponent(match[1]) : "";
   }
 
-  const apiFetch = useCallback((path: string, opts: RequestInit = {}) => {
-    const sid = getCookie("session_id");
-    return fetch(`${EMPLOYER_URL}${path}`, {
+  const apiFetch = useCallback((action: string, opts: RequestInit = {}) => {
+    const s = getCookie("session_id");
+    return fetch(`${EMPLOYER_URL}?action=${action}`, {
       ...opts,
-      headers: { "Content-Type": "application/json", Cookie: `session_id=${sid}`, ...(opts.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Cookie": `session_id=${s}`,
+        ...(opts.headers || {}),
+      },
     });
   }, [EMPLOYER_URL]);
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch("/employees");
+    const res = await apiFetch("employees");
     if (res.ok) {
       const data = await res.json();
       setEmployees(data.employees || []);
@@ -62,7 +66,7 @@ export default function EmployerPanel() {
     if (!selectedEmp || !selectedTest) return;
     setSending(true);
     const testData = TESTS_DATA.find(t => t.id === selectedTest);
-    const res = await apiFetch("/assign", {
+    const res = await apiFetch("assign", {
       method: "POST",
       body: JSON.stringify({ employee_id: selectedEmp, test_id: selectedTest, test_title: testData?.title || selectedTest, due_date: dueDate || null }),
     });
@@ -80,7 +84,7 @@ export default function EmployerPanel() {
   const sendNotification = async () => {
     if (!selectedEmp || !notifBody) return;
     setSending(true);
-    const res = await apiFetch("/notify", {
+    const res = await apiFetch("notify", {
       method: "POST",
       body: JSON.stringify({ employee_id: selectedEmp, title: notifTitle || "Уведомление", message: notifBody }),
     });
