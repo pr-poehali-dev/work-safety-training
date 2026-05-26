@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { TESTS_DATA, type TestData } from "@/data/tests";
@@ -372,6 +372,19 @@ export default function Index() {
   const { user, unreadCount, loading: authLoading, completeTest } = useAuth();
   const [authModal, setAuthModal] = useState<false | "login" | "register">(false);
   const [avatarMenu, setAvatarMenu] = useState(false);
+  const avatarMenuRef = useRef<HTMLDivElement>(null);
+
+  // Закрываем меню при клике вне него
+  useEffect(() => {
+    if (!avatarMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(e.target as Node)) {
+        setAvatarMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [avatarMenu]);
 
   const [active, setActive] = useState<Section>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -583,7 +596,7 @@ export default function Index() {
             {authLoading ? (
               <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
             ) : user ? (
-              <div className="relative">
+              <div className="relative" ref={avatarMenuRef}>
                 <button
                   onClick={() => setAvatarMenu(v => !v)}
                   className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold hover:bg-primary/90 transition-colors"
@@ -592,8 +605,7 @@ export default function Index() {
                 </button>
                 {avatarMenu && (
                   <div
-                    className="absolute right-0 top-10 z-[60] bg-white border border-border rounded-xl shadow-xl w-56 py-1 animate-fade-in"
-                    onClick={e => e.stopPropagation()}
+                    className="absolute right-0 top-10 z-[200] bg-white border border-border rounded-xl shadow-xl w-56 py-1 animate-fade-in"
                   >
                     <div className="px-4 py-2.5 border-b border-border">
                       <p className="font-medium text-sm truncate">{user.fio}</p>
@@ -1482,10 +1494,13 @@ export default function Index() {
 
         {active === "cabinet" && (
           user ? (
-            <CabinetPanel onStartTest={(testId) => {
-              const t = TESTS_DATA.find(td => td.id === testId);
-              if (t) { startTest(t); navigate("tests"); }
-            }} />
+            <CabinetPanel
+              onStartTest={(testId) => {
+                const t = TESTS_DATA.find(td => td.id === testId);
+                if (t) { startTest(t); navigate("tests"); }
+              }}
+              onLogout={() => navigate("home")}
+            />
           ) : (
             <div className="animate-fade-in text-center py-24 space-y-4">
               <Icon name="UserCircle" size={48} className="mx-auto text-muted-foreground/30" fallback="Circle" />
@@ -1745,10 +1760,7 @@ export default function Index() {
         />
       )}
 
-      {/* Overlay для закрытия avatar-меню */}
-      {avatarMenu && (
-        <div className="fixed inset-0 z-[55]" onClick={() => setAvatarMenu(false)} />
-      )}
+
 
       <footer className="border-t border-border bg-white py-4 mt-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">

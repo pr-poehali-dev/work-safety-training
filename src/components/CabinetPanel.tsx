@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { useAuth } from "@/contexts/AuthContext";
 import { TESTS_DATA } from "@/data/tests";
 
-export default function CabinetPanel({ onStartTest }: { onStartTest: (testId: string) => void }) {
+export default function CabinetPanel({ onStartTest, onLogout }: { onStartTest: (testId: string) => void; onLogout?: () => void }) {
   const { user, logout, notifications, unreadCount, assignedTests, markNotificationsRead, fetchNotifications } = useAuth();
   const [tab, setTab] = useState<"profile" | "notifications" | "tests">("profile");
 
@@ -29,8 +29,8 @@ export default function CabinetPanel({ onStartTest }: { onStartTest: (testId: st
           <h1 className="text-2xl font-semibold">Личный кабинет</h1>
         </div>
         <button
-          onClick={logout}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
+          onClick={async () => { await logout(); onLogout?.(); }}
+          className="flex items-center gap-1.5 text-xs text-red-500 border border-red-200 rounded-lg px-3 py-2 hover:bg-red-50 transition-colors"
         >
           <Icon name="LogOut" size={13} fallback="Circle" />
           Выйти
