@@ -20,6 +20,7 @@ import CompanyDocsList from "@/components/CompanyDocsList";
 import CompanyContacts from "@/components/CompanyContacts";
 import CompanyChat from "@/components/CompanyChat";
 import EmployerSavedCards from "@/components/EmployerSavedCards";
+import CustomTestBuilder from "@/components/CustomTestBuilder";
 import { useAuth } from "@/contexts/AuthContext";
 import { uGet, uSet } from "@/utils/userStorage";
 
@@ -432,7 +433,7 @@ function LogoutButton({ onDone }: { onDone: () => void }) {
 }
 
 export default function Index() {
-  const { user, unreadCount, loading: authLoading, completeTest } = useAuth();
+  const { user, unreadCount, loading: authLoading, completeTest, assignedTests } = useAuth();
   const [authModal, setAuthModal] = useState<false | "login" | "register" | "forgot" | "reset">(false);
   const [resetToken, setResetToken] = useState("");
   const [avatarMenu, setAvatarMenu] = useState(false);
@@ -543,6 +544,8 @@ export default function Index() {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [completedTests, setCompletedTests] = useState<Record<string, number>>({});
+  // Вкладка тестов (для работодателя: "standard" | "custom")
+  const [testsTab, setTestsTab] = useState<"standard" | "custom">("standard");
 
   // Загружаем прогресс инструктажей и тестов при смене пользователя
   useEffect(() => {
@@ -572,6 +575,28 @@ export default function Index() {
     setCurrentQ(0);
     setAnswers({});
     setTestMode("running");
+  };
+
+  const startCustomTest = async (customTestId: number, title: string) => {
+    try {
+      const sid = document.cookie.match(/(?:^|;\s*)session_id=([^;]*)/)?.[1] || "";
+      const EMPLOYER_URL_INLINE = "https://functions.poehali.dev/2db38725-d446-4c74-8d25-b78ef3437142";
+      const res = await fetch(`${EMPLOYER_URL_INLINE}?action=custom_test_for_employee&id=${customTestId}`, {
+        headers: { "X-Cookie": `session_id=${sid}` },
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      const t = d.test;
+      const testData: TestData = {
+        id: `custom_${customTestId}`,
+        title: t.title,
+        description: t.description || "",
+        time: t.time_limit,
+        passingScore: t.passing_score,
+        questions: t.questions,
+      };
+      startTest(testData);
+    } catch { /* ignore */ }
   };
 
   const selectAnswer = (qIndex: number, optIndex: number) => {
@@ -1265,56 +1290,117 @@ export default function Index() {
             <div>
               <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
               <h1 className="text-2xl font-semibold">Тестирование</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Программы обучения по охране труда — вопросы Минтруда РФ</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {user?.role === "employer" ? "Стандартные тесты и управление собственными" : "Программы обучения по охране труда"}
+              </p>
             </div>
 
-            <div className="grid gap-3">
-              {TESTS_DATA.map((t) => {
-                const score = completedTests[t.id];
-                const passed = score !== undefined && score >= t.passingScore;
-                const failed = score !== undefined && score < t.passingScore;
-                return (
-                  <div key={t.id} className="bg-white border border-border rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:shadow-md">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                        {score === undefined && <StatusBadge status="pending" />}
-                        {passed && <StatusBadge status="passed" />}
-                        {failed && <StatusBadge status="failed" />}
-                        {score !== undefined && (
-                          <span className="text-xs text-muted-foreground">
-                            Результат: <strong className={passed ? "text-green-600" : "text-red-600"}>{score}%</strong>
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="font-medium text-sm mb-1">{t.title}</h3>
-                      <p className="text-xs text-muted-foreground mb-2">{t.description}</p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1"><Icon name="HelpCircle" size={12} fallback="Circle" />{t.questions.length} вопросов</span>
-                        <span className="flex items-center gap-1"><Icon name="Clock" size={12} fallback="Circle" />{t.time} мин</span>
-                        <span className="flex items-center gap-1"><Icon name="Target" size={12} fallback="Circle" />Порог: {t.passingScore}%</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => startTest(t)}
-                      className={`px-5 py-2.5 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
-                        passed
-                          ? "bg-muted text-foreground hover:bg-muted/80"
-                          : failed
-                          ? "bg-red-500 text-white hover:bg-red-600"
-                          : "bg-primary text-white hover:bg-primary/90"
-                      }`}
-                    >
-                      {passed ? "Пройти повторно" : failed ? "Пересдать" : "Начать тест"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Вкладки для работодателя */}
+            {user?.role === "employer" && (
+              <div className="flex gap-1 border-b border-border">
+                {([
+                  { id: "standard", label: "Стандартные тесты", icon: "BookOpen" },
+                  { id: "custom", label: "Мои тесты", icon: "ClipboardList" },
+                ] as const).map(tab => (
+                  <button key={tab.id} onClick={() => setTestsTab(tab.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+                      testsTab === tab.id ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}>
+                    <Icon name={tab.icon} size={14} fallback="Circle" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-              <Icon name="Info" size={16} className="text-blue-600 mt-0.5 shrink-0" fallback="Circle" />
-              <p className="text-sm text-blue-800">Для допуска к работе необходимо пройти все обязательные тесты с результатом не менее <strong>80%</strong>. Тесты можно пересдавать неограниченное число раз. В конце каждого теста отображается разбор ошибок.</p>
-            </div>
+            {/* Конструктор тестов для работодателя */}
+            {user?.role === "employer" && testsTab === "custom" && (
+              <CustomTestBuilder onBack={() => setTestsTab("standard")} />
+            )}
+
+            {/* Стандартные тесты */}
+            {(user?.role !== "employer" || testsTab === "standard") && (
+              <>
+                <div className="grid gap-3">
+                  {TESTS_DATA.map((t) => {
+                    const score = completedTests[t.id];
+                    const passed = score !== undefined && score >= t.passingScore;
+                    const failed = score !== undefined && score < t.passingScore;
+                    return (
+                      <div key={t.id} className="bg-white border border-border rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:shadow-md">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            {score === undefined && <StatusBadge status="pending" />}
+                            {passed && <StatusBadge status="passed" />}
+                            {failed && <StatusBadge status="failed" />}
+                            {score !== undefined && (
+                              <span className="text-xs text-muted-foreground">
+                                Результат: <strong className={passed ? "text-green-600" : "text-red-600"}>{score}%</strong>
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-medium text-sm mb-1">{t.title}</h3>
+                          <p className="text-xs text-muted-foreground mb-2">{t.description}</p>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Icon name="HelpCircle" size={12} fallback="Circle" />{t.questions.length} вопросов</span>
+                            <span className="flex items-center gap-1"><Icon name="Clock" size={12} fallback="Circle" />{t.time} мин</span>
+                            <span className="flex items-center gap-1"><Icon name="Target" size={12} fallback="Circle" />Порог: {t.passingScore}%</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => startTest(t)}
+                          className={`px-5 py-2.5 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                            passed ? "bg-muted text-foreground hover:bg-muted/80"
+                            : failed ? "bg-red-500 text-white hover:bg-red-600"
+                            : "bg-primary text-white hover:bg-primary/90"
+                          }`}
+                        >
+                          {passed ? "Пройти повторно" : failed ? "Пересдать" : "Начать тест"}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Кастомные тесты назначенные сотруднику */}
+                  {user?.role === "employee" && assignedTests.filter(at => at.test_id.startsWith("custom_")).map(at => {
+                    const customId = Number(at.test_id.replace("custom_", ""));
+                    const score = at.score ?? completedTests[at.test_id];
+                    const passed = score !== undefined && score !== null && score >= 80;
+                    const failed = score !== undefined && score !== null && !passed;
+                    return (
+                      <div key={at.id} className="bg-white border border-primary/20 rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:shadow-md">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">От работодателя</span>
+                            {score === undefined || score === null ? <StatusBadge status="pending" /> : passed ? <StatusBadge status="passed" /> : <StatusBadge status="failed" />}
+                            {score !== undefined && score !== null && (
+                              <span className="text-xs text-muted-foreground">Результат: <strong className={passed ? "text-green-600" : "text-red-600"}>{score}%</strong></span>
+                            )}
+                          </div>
+                          <h3 className="font-medium text-sm mb-1">{at.test_title}</h3>
+                          {at.due_date && <p className="text-xs text-amber-600">Срок: {at.due_date}</p>}
+                        </div>
+                        <button
+                          onClick={() => startCustomTest(customId, at.test_title)}
+                          className={`px-5 py-2.5 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${
+                            passed ? "bg-muted text-foreground hover:bg-muted/80"
+                            : failed ? "bg-red-500 text-white hover:bg-red-600"
+                            : "bg-primary text-white hover:bg-primary/90"
+                          }`}
+                        >
+                          {passed ? "Пройти повторно" : failed ? "Пересдать" : "Начать тест"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                  <Icon name="Info" size={16} className="text-blue-600 mt-0.5 shrink-0" fallback="Circle" />
+                  <p className="text-sm text-blue-800">Для допуска к работе необходимо пройти все обязательные тесты с результатом не менее <strong>80%</strong>. Тесты можно пересдавать неограниченное число раз.</p>
+                </div>
+              </>
+            )}
           </div>
         )}
 

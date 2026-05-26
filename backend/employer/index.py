@@ -215,6 +215,171 @@ def handler(event: dict, context) -> dict:
             send_email(emp[2], title, email_html)
             return ok({"ok": True})
 
+        # ?action=custom_test_list — список кастомных тестов компании
+        if action == "custom_test_list":
+            cur.execute(
+                f"""SELECT t.id, t.title, t.description, t.passing_score, t.time_limit,
+                           t.created_at::text,
+                           COUNT(q.id) AS question_count
+                    FROM {SCHEMA}.custom_tests t
+                    LEFT JOIN {SCHEMA}.custom_test_questions q ON q.test_id = t.id
+                    WHERE t.company_id = %s
+                    GROUP BY t.id ORDER BY t.created_at DESC""",
+                (company_id,),
+            )
+            rows = cur.fetchall()
+            tests = [{"id": r[0], "title": r[1], "description": r[2],
+                      "passing_score": r[3], "time_limit": r[4],
+                      "created_at": r[5], "question_count": r[6]} for r in rows]
+            return ok({"tests": tests})
+
+        # ?action=custom_test_get&id=N — получить тест с вопросами
+        if action == "custom_test_get":
+            test_id = qs.get("id")
+            if not test_id:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, description, passing_score, time_limit FROM {SCHEMA}.custom_tests WHERE id=%s AND company_id=%s",
+                (int(test_id), company_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Тест не найден")
+            cur.execute(
+                f"SELECT id, text, options::text, correct, explanation FROM {SCHEMA}.custom_test_questions WHERE test_id=%s ORDER BY sort_order",
+                (int(test_id),),
+            )
+            import json as _json
+            qs_rows = cur.fetchall()
+            questions = [{"id": r[0], "text": r[1], "options": _json.loads(r[2]), "correct": r[3], "explanation": r[4]} for r in qs_rows]
+            return ok({"test": {"id": row[0], "title": row[1], "description": row[2],
+                                "passing_score": row[3], "time_limit": row[4], "questions": questions}})
+
+        # ?action=custom_test_save — создать или обновить тест (POST)
+        if action == "custom_test_save":
+            import json as _json
+            title = (body.get("title") or "").strip()
+            description = (body.get("description") or "").strip()
+            passing_score = int(body.get("passing_score") or 80)
+            time_limit = int(body.get("time_limit") or 20)
+            questions = body.get("questions") or []
+            test_id = body.get("id")
+
+            if not title:
+                return err("Укажите название теста")
+            if len(questions) < 1:
+                return err("Добавьте хотя бы один вопрос")
+
+            if test_id:
+                cur.execute(
+                    f"""UPDATE {SCHEMA}.custom_tests SET title=%s, description=%s,
+                           passing_score=%s, time_limit=%s, updated_at=NOW()
+                        WHERE id=%s AND company_id=%s AND employer_id=%s""",
+                    (title, description, passing_score, time_limit, int(test_id), company_id, user["id"]),
+                )
+                if cur.rowcount == 0:
+                    return err("Тест не найден или нет доступа")
+                cur.execute(f"UPDATE {SCHEMA}.custom_test_questions SET text='[removed]' WHERE test_id=%s AND 1=0", (int(test_id),))
+                # Удаляем старые вопросы через UPDATE (нет DELETE)
+                cur.execute(f"UPDATE {SCHEMA}.custom_test_questions SET sort_order=-1 WHERE test_id=%s", (int(test_id),))
+            else:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.custom_tests (company_id, employer_id, title, description, passing_score, time_limit) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                    (company_id, user["id"], title, description, passing_score, time_limit),
+                )
+                test_id = cur.fetchone()[0]
+
+            # Вставляем вопросы
+            for i, q in enumerate(questions):
+                opts = _json.dumps(q.get("options", []), ensure_ascii=False)
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.custom_test_questions (test_id, sort_order, text, options, correct, explanation) VALUES (%s,%s,%s,%s,%s,%s)",
+                    (int(test_id), i, (q.get("text") or "").strip(), opts, int(q.get("correct") or 0), (q.get("explanation") or "").strip()),
+                )
+            conn.commit()
+            return ok({"ok": True, "id": int(test_id)})
+
+        # ?action=custom_test_delete — скрыть тест (переименование)
+        if action == "custom_test_delete":
+            test_id = body.get("id")
+            if not test_id:
+                return err("Укажите id")
+            cur.execute(
+                f"UPDATE {SCHEMA}.custom_tests SET title='[УДАЛЁН] '||title WHERE id=%s AND company_id=%s AND employer_id=%s",
+                (int(test_id), company_id, user["id"]),
+            )
+            if cur.rowcount == 0:
+                return err("Тест не найден или нет доступа")
+            conn.commit()
+            return ok({"ok": True})
+
+        # ?action=custom_test_assign — назначить кастомный тест сотруднику
+        if action == "custom_test_assign":
+            test_id = body.get("test_id")
+            employee_ids = body.get("employee_ids") or []
+            due_date = body.get("due_date")
+            if not test_id or not employee_ids:
+                return err("Укажите test_id и employee_ids")
+
+            cur.execute(
+                f"SELECT id, title FROM {SCHEMA}.custom_tests WHERE id=%s AND company_id=%s AND title NOT LIKE '[УДАЛЁН]%%'",
+                (int(test_id), company_id),
+            )
+            test_row = cur.fetchone()
+            if not test_row:
+                return err("Тест не найден")
+            test_title = test_row[1]
+            assigned = 0
+            for eid in employee_ids:
+                cur.execute(
+                    f"SELECT id, fio, email FROM {SCHEMA}.users WHERE id=%s AND company_id=%s AND role='employee'",
+                    (int(eid), company_id),
+                )
+                emp = cur.fetchone()
+                if not emp:
+                    continue
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.assigned_tests
+                               (employer_id, employee_id, test_id, test_title, due_date, custom_test_id)
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (employee_id, test_id) DO UPDATE SET
+                            assigned_at=NOW(), due_date=EXCLUDED.due_date,
+                            completed_at=NULL, score=NULL, custom_test_id=EXCLUDED.custom_test_id""",
+                    (user["id"], int(eid), f"custom_{test_id}", test_title, due_date or None, int(test_id)),
+                )
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.notifications (user_id, title, body) VALUES (%s,%s,%s)",
+                    (int(eid), "Назначен новый тест", f"Работодатель назначил вам тест: «{test_title}»"),
+                )
+                notif_html = f"<h2>Вам назначен тест</h2><p>Здравствуйте, <b>{emp[1]}</b>!</p><p>Работодатель <b>{user['fio']}</b> назначил вам тест: <b>«{test_title}»</b>.</p>{'<p>Срок: <b>' + due_date + '</b></p>' if due_date else ''}"
+                send_email(emp[2], f"Новый тест: {test_title}", notif_html)
+                assigned += 1
+            conn.commit()
+            return ok({"ok": True, "assigned": assigned})
+
+        # ?action=custom_test_for_employee — получить данные кастомного теста для сотрудника
+        if action == "custom_test_for_employee":
+            test_id = qs.get("id")
+            if not test_id:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, description, passing_score, time_limit FROM {SCHEMA}.custom_tests WHERE id=%s",
+                (int(test_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Тест не найден")
+            cur.execute(
+                f"SELECT text, options::text, correct, explanation FROM {SCHEMA}.custom_test_questions WHERE test_id=%s AND sort_order >= 0 ORDER BY sort_order",
+                (int(test_id),),
+            )
+            import json as _json
+            questions = []
+            for i, r in enumerate(cur.fetchall()):
+                questions.append({"id": i, "text": r[0], "options": _json.loads(r[1]), "correct": r[2], "explanation": r[3]})
+            return ok({"test": {"id": row[0], "title": row[1], "description": row[2],
+                                "passing_score": row[3], "time_limit": row[4], "questions": questions}})
+
         return err(f"Неизвестное действие: '{action}'", 400)
 
     finally:
