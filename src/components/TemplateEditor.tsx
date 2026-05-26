@@ -33,33 +33,40 @@ interface Props {
   onBack: () => void;
   /** Роль текущего пользователя */
   userRole?: "employer" | "employee";
+  /** ID пользователя для привязки localStorage */
+  userId?: number;
   /** Если открыта уже сохранённая карта */
   savedCard?: SavedCard;
   /** Заполненные значения от работодателя (режим просмотра сотрудника) */
   readonlyValues?: Record<string, string>;
 }
 
-const STORAGE_KEY = "templateValues";
-
-function loadLocal(id: string): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")[id] || {}; } catch { return {}; }
+function storageKey(userId?: number) {
+  return userId ? `u_${userId}_templateValues` : "templateValues_guest";
 }
-function saveLocal(id: string, vals: Record<string, string>) {
+
+function loadLocal(templateId: string, userId?: number): Record<string, string> {
   try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    all[id] = vals;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    return JSON.parse(localStorage.getItem(storageKey(userId)) || "{}")[templateId] || {};
+  } catch { return {}; }
+}
+function saveLocal(templateId: string, vals: Record<string, string>, userId?: number) {
+  try {
+    const key = storageKey(userId);
+    const all = JSON.parse(localStorage.getItem(key) || "{}");
+    all[templateId] = vals;
+    localStorage.setItem(key, JSON.stringify(all));
   } catch { /* ignore */ }
 }
 
 const FONT_SIZES = ["10", "11", "12", "14", "16", "18", "20", "24", "28", "36"];
 
-export default function TemplateEditor({ template, onBack, userRole, savedCard, readonlyValues }: Props) {
+export default function TemplateEditor({ template, onBack, userRole, userId, savedCard, readonlyValues }: Props) {
   const isEmployer = userRole === "employer";
   // Сотрудник видит только readonly-карту
   const isReadonly = userRole === "employee" && !!readonlyValues;
 
-  const initValues = readonlyValues || savedCard?.filled_values || loadLocal(template.id);
+  const initValues = readonlyValues || savedCard?.filled_values || loadLocal(template.id, userId);
   const [values, setValues] = useState<Record<string, string>>(initValues);
   const [tab, setTab] = useState<"form" | "editor" | "preview">(
     isReadonly ? "preview" : (template.fields.length > 0 ? "form" : "editor")
@@ -69,7 +76,7 @@ export default function TemplateEditor({ template, onBack, userRole, savedCard, 
   const editorRef = useRef<HTMLDivElement>(null);
   const [editorHtml, setEditorHtml] = useState(() => {
     if (isCustom) {
-      return (readonlyValues?.["__html__"] || savedCard?.filled_values?.["__html__"] || loadLocal(template.id)["__html__"] || template.content || "");
+      return (readonlyValues?.["__html__"] || savedCard?.filled_values?.["__html__"] || loadLocal(template.id, userId)["__html__"] || template.content || "");
     }
     return "";
   });
@@ -93,18 +100,18 @@ export default function TemplateEditor({ template, onBack, userRole, savedCard, 
     const html = editorRef.current.innerHTML;
     setEditorHtml(html);
     if (!isReadonly) {
-      const vals = { ...loadLocal(template.id), "__html__": html };
-      saveLocal(template.id, vals);
+      const vals = { ...loadLocal(template.id, userId), "__html__": html };
+      saveLocal(template.id, vals, userId);
       setLocalSaved(true);
       setTimeout(() => setLocalSaved(false), 1200);
     }
-  }, [template.id, isReadonly]);
+  }, [template.id, isReadonly, userId]);
 
   const set = (key: string, val: string) => {
     if (isReadonly) return;
     setValues(prev => {
       const next = { ...prev, [key]: val };
-      saveLocal(template.id, next);
+      saveLocal(template.id, next, userId);
       return next;
     });
     setLocalSaved(true);
@@ -336,7 +343,7 @@ export default function TemplateEditor({ template, onBack, userRole, savedCard, 
               className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/5 transition-colors font-medium">
               <Icon name="Eye" size={14} fallback="Circle" /> Предпросмотр
             </button>
-            <button onClick={() => { setValues({}); saveLocal(template.id, {}); }}
+            <button onClick={() => { setValues({}); saveLocal(template.id, {}, userId); }}
               className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors">
               <Icon name="RotateCcw" size={13} fallback="Circle" /> Очистить
             </button>

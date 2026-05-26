@@ -21,6 +21,7 @@ import CompanyContacts from "@/components/CompanyContacts";
 import CompanyChat from "@/components/CompanyChat";
 import EmployerSavedCards from "@/components/EmployerSavedCards";
 import { useAuth } from "@/contexts/AuthContext";
+import { uGet, uSet } from "@/utils/userStorage";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
 
@@ -104,6 +105,7 @@ interface SoutSectionProps {
   cardType: "sout" | "profrisk";
   templates: Template[];
   userRole?: string;
+  userId?: number;
   editTemplate: Template | null;
   editSavedCard: SavedCard | null;
   viewCard: { template: Template; values: Record<string, string> } | null;
@@ -114,7 +116,7 @@ interface SoutSectionProps {
   infoHint: ReactNode;
 }
 
-function SoutSection({ cardType, templates, userRole, editTemplate, editSavedCard, viewCard, onOpenTemplate, onOpenSaved, onOpenView, onBack, infoHint }: SoutSectionProps) {
+function SoutSection({ cardType, templates, userRole, userId, editTemplate, editSavedCard, viewCard, onOpenTemplate, onOpenSaved, onOpenView, onBack, infoHint }: SoutSectionProps) {
   const isSout = cardType === "sout";
   const isEmployer = userRole === "employer";
   const isEmployee = userRole === "employee";
@@ -126,17 +128,18 @@ function SoutSection({ cardType, templates, userRole, editTemplate, editSavedCar
         template={editTemplate}
         onBack={onBack}
         userRole={isEmployer ? "employer" : "employee"}
+        userId={userId}
       />
     );
   }
   if (editSavedCard) {
-    // Находим шаблон по template_id
     const tpl = templates.find(t => t.id === editSavedCard.template_id) || templates[0];
     return (
       <TemplateEditor
         template={{ ...tpl, id: editSavedCard.template_id, title: editSavedCard.title }}
         onBack={onBack}
         userRole="employer"
+        userId={userId}
         savedCard={editSavedCard}
       />
     );
@@ -147,6 +150,7 @@ function SoutSection({ cardType, templates, userRole, editTemplate, editSavedCar
         template={viewCard.template}
         onBack={onBack}
         userRole="employee"
+        userId={userId}
         readonlyValues={viewCard.values}
       />
     );
@@ -421,16 +425,26 @@ export default function Index() {
   const [viewCard, setViewCard] = useState<{ template: Template; values: Record<string, string> } | null>(null);
   const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setEditTemplate(null); setEditSavedCard(null); setViewCard(null); setAddingTemplate(false); };
   const [openDocGroup, setOpenDocGroup] = useState<string | null>(null);
-  const [userTemplates, setUserTemplates] = useState<Template[]>(() => {
-    try { return JSON.parse(localStorage.getItem("userTemplates") || "[]"); } catch { return []; }
-  });
+  const [userTemplates, setUserTemplates] = useState<Template[]>([]);
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [newTplTitle, setNewTplTitle] = useState("");
   const [newTplContent, setNewTplContent] = useState("");
 
+  // Загружаем userTemplates при смене пользователя
   useEffect(() => {
-    localStorage.setItem("userTemplates", JSON.stringify(userTemplates));
-  }, [userTemplates]);
+    if (user?.id) {
+      setUserTemplates(uGet(user.id, "userTemplates", []));
+    } else {
+      setUserTemplates([]);
+    }
+  }, [user?.id]);
+
+  // Сохраняем userTemplates при изменении (только если есть user)
+  useEffect(() => {
+    if (user?.id) {
+      uSet(user.id, "userTemplates", userTemplates);
+    }
+  }, [userTemplates, user?.id]);
 
   const addUserTemplate = () => {
     if (!newTplTitle.trim()) return;
@@ -452,11 +466,7 @@ export default function Index() {
 
   // Briefing state
   const [activeBriefingId, setActiveBriefingId] = useState<string | null>(null);
-  const [completedBriefings, setCompletedBriefings] = useState<Set<string>>(new Set(["intro", "primary"]));
-
-  const completeBriefing = (id: string) => {
-    setCompletedBriefings(prev => { const s = new Set(prev); s.add(id); return s; });
-  };
+  const [completedBriefings, setCompletedBriefings] = useState<Set<string>>(new Set());
 
   // Test state
   const [testMode, setTestMode] = useState<TestMode>("list");
@@ -464,6 +474,29 @@ export default function Index() {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [completedTests, setCompletedTests] = useState<Record<string, number>>({});
+
+  // Загружаем прогресс инструктажей и тестов при смене пользователя
+  useEffect(() => {
+    if (user?.id) {
+      setCompletedBriefings(new Set(uGet<string[]>(user.id, "completedBriefings", [])));
+      setCompletedTests(uGet<Record<string, number>>(user.id, "completedTests", {}));
+      setChecklistState(uGet(user.id, "checklistState", CHECKLISTS_DATA));
+    } else {
+      // Гость — всё пустое
+      setCompletedBriefings(new Set());
+      setCompletedTests({});
+      setChecklistState(CHECKLISTS_DATA);
+    }
+  }, [user?.id]);
+
+  const completeBriefing = (id: string) => {
+    setCompletedBriefings(prev => {
+      const s = new Set(prev);
+      s.add(id);
+      if (user?.id) uSet(user.id, "completedBriefings", [...s]);
+      return s;
+    });
+  };
 
   const startTest = (test: TestData) => {
     setActiveTest(test);
@@ -480,7 +513,11 @@ export default function Index() {
     if (!activeTest) return;
     const correct = activeTest.questions.filter((q, i) => answers[i] === q.correct).length;
     const score = Math.round((correct / activeTest.questions.length) * 100);
-    setCompletedTests(prev => ({ ...prev, [activeTest.id]: score }));
+    setCompletedTests(prev => {
+      const next = { ...prev, [activeTest.id]: score };
+      if (user?.id) uSet(user.id, "completedTests", next);
+      return next;
+    });
     setTestMode("results");
     // Сохраняем результат если назначен работодателем
     if (user) completeTest(activeTest.id, score);
@@ -493,34 +530,46 @@ export default function Index() {
     setCurrentQ(0);
   };
 
+  const saveChecklist = (next: typeof CHECKLISTS_DATA) => {
+    if (user?.id) uSet(user.id, "checklistState", next);
+  };
+
   const toggleItem = (ci: number, ii: number) => {
-    setChecklistState(prev =>
-      prev.map((c, i) =>
-        i === ci
-          ? { ...c, items: c.items.map((item, j) => j === ii ? { ...item, done: !item.done } : item) }
-          : c
-      )
-    );
+    setChecklistState(prev => {
+      const next = prev.map((c, i) =>
+        i === ci ? { ...c, items: c.items.map((item, j) => j === ii ? { ...item, done: !item.done } : item) } : c
+      );
+      saveChecklist(next);
+      return next;
+    });
   };
 
   const addCheckItem = (ci: number, text: string) => {
     if (!text.trim()) return;
-    setChecklistState(prev =>
-      prev.map((c, i) =>
+    setChecklistState(prev => {
+      const next = prev.map((c, i) =>
         i === ci ? { ...c, items: [...c.items, { text: text.trim(), done: false }] } : c
-      )
-    );
+      );
+      saveChecklist(next);
+      return next;
+    });
   };
 
   const removeCheckItem = (ci: number, ii: number) => {
-    setChecklistState(prev =>
-      prev.map((c, i) =>
+    setChecklistState(prev => {
+      const next = prev.map((c, i) =>
         i === ci ? { ...c, items: c.items.filter((_, j) => j !== ii) } : c
-      )
-    );
+      );
+      saveChecklist(next);
+      return next;
+    });
   };
 
-  const resetChecklists = () => setChecklistState(CHECKLISTS_DATA.map(c => ({ ...c, items: c.items.map(i => ({ ...i, done: false })) })));
+  const resetChecklists = () => {
+    const next = CHECKLISTS_DATA.map(c => ({ ...c, items: c.items.map(i => ({ ...i, done: false })) }));
+    setChecklistState(next);
+    saveChecklist(next);
+  };
 
   const navigate = (id: Section, opts?: { briefingId?: string; infoTab?: typeof INFO_TABS[number] }) => {
     setActive(id);
@@ -978,7 +1027,7 @@ export default function Index() {
             {infoTab === "Справочники" && (
               <div className="space-y-4">
                 {editTemplate ? (
-                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
+                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} userId={user?.id} userRole={user?.role} />
                 ) : (
                   <>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1034,9 +1083,12 @@ export default function Index() {
                                       setUserTemplates(prev => prev.filter(t => t.id !== tpl.id));
                                       // Удаляем сохранённые данные
                                       try {
-                                        const all = JSON.parse(localStorage.getItem("templateValues") || "{}");
-                                        delete all[tpl.id];
-                                        localStorage.setItem("templateValues", JSON.stringify(all));
+                                        if (user?.id) {
+                                          const key = `u_${user.id}_templateValues`;
+                                          const all = JSON.parse(localStorage.getItem(key) || "{}");
+                                          delete all[tpl.id];
+                                          localStorage.setItem(key, JSON.stringify(all));
+                                        }
                                       } catch { /* ignore */ }
                                     }
                                   }}
@@ -1097,6 +1149,7 @@ export default function Index() {
                 cardType="sout"
                 templates={SOUT_TEMPLATES}
                 userRole={user?.role}
+                userId={user?.id}
                 editTemplate={editTemplate}
                 editSavedCard={editSavedCard}
                 viewCard={viewCard}
@@ -1119,6 +1172,7 @@ export default function Index() {
                 cardType="profrisk"
                 templates={PROFRISK_TEMPLATES}
                 userRole={user?.role}
+                userId={user?.id}
                 editTemplate={editTemplate}
                 editSavedCard={editSavedCard}
                 viewCard={viewCard}
