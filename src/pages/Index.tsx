@@ -11,6 +11,7 @@ import {
   PROFRISK_TEMPLATES,
   type Template,
 } from "@/data/infoData";
+import TemplateEditor from "@/components/TemplateEditor";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
 
@@ -115,9 +116,9 @@ export default function Index() {
   const INFO_TABS = ["Новости", "Документация", "Справочники", "Мои СОУТ", "ПрофРиски"] as const;
   type InfoTab = typeof INFO_TABS[number];
   const [infoTab, setInfoTab] = useState<InfoTab>("Новости");
-  const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setViewTemplate(null); setAddingTemplate(false); };
+  const [editTemplate, setEditTemplate] = useState<Template | null>(null);
+  const switchInfoTab = (tab: InfoTab) => { setInfoTab(tab); setEditTemplate(null); setAddingTemplate(false); };
   const [openDocGroup, setOpenDocGroup] = useState<string | null>(null);
-  const [viewTemplate, setViewTemplate] = useState<Template | null>(null);
   const [userTemplates, setUserTemplates] = useState<Template[]>([]);
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [newTplTitle, setNewTplTitle] = useState("");
@@ -190,9 +191,11 @@ export default function Index() {
 
   const resetChecklists = () => setChecklistState(CHECKLISTS_DATA.map(c => ({ ...c, items: c.items.map(i => ({ ...i, done: false })) })));
 
-  const navigate = (id: Section) => {
+  const navigate = (id: Section, opts?: { briefingId?: string; infoTab?: typeof INFO_TABS[number] }) => {
     setActive(id);
     setSidebarOpen(false);
+    if (opts?.briefingId) setActiveBriefingId(opts.briefingId);
+    if (opts?.infoTab) switchInfoTab(opts.infoTab);
   };
 
   return (
@@ -312,17 +315,45 @@ export default function Index() {
                 </div>
                 <div className="space-y-1">
                   {[
-                    { text: "Пройти повторный инструктаж", due: "08.06.2026", urgent: true },
-                    { text: "Тест «Пожарная безопасность»", due: "15.06.2026", urgent: false },
-                    { text: "Тест «Работа на высоте»", due: "30.06.2026", urgent: false },
+                    {
+                      text: "Пройти повторный инструктаж",
+                      due: "08.06.2026",
+                      urgent: true,
+                      action: () => navigate("briefings", { briefingId: "repeat" }),
+                    },
+                    {
+                      text: "Тест «Пожарная безопасность»",
+                      due: "15.06.2026",
+                      urgent: false,
+                      action: () => {
+                        const t = TESTS_DATA.find(t => t.id === "fire");
+                        if (t) { navigate("tests"); setTimeout(() => startTest(t), 50); }
+                        else navigate("tests");
+                      },
+                    },
+                    {
+                      text: "Тест «Работа на высоте»",
+                      due: "30.06.2026",
+                      urgent: false,
+                      action: () => {
+                        const t = TESTS_DATA.find(t => t.id === "height");
+                        if (t) { navigate("tests"); setTimeout(() => startTest(t), 50); }
+                        else navigate("tests");
+                      },
+                    },
                   ].map((t, i) => (
-                    <div key={i} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+                    <button
+                      key={i}
+                      onClick={t.action}
+                      className="w-full flex items-center justify-between py-2.5 border-b border-border last:border-0 hover:bg-muted/40 rounded-md px-2 -mx-2 transition-colors group text-left"
+                    >
                       <div className="flex items-center gap-2.5">
                         <div className={`w-2 h-2 rounded-full shrink-0 ${t.urgent ? "bg-amber-500" : "bg-blue-400"}`} />
-                        <span className="text-sm">{t.text}</span>
+                        <span className="text-sm group-hover:text-primary transition-colors">{t.text}</span>
+                        <Icon name="ChevronRight" size={13} className="text-muted-foreground group-hover:text-primary transition-colors" fallback="Circle" />
                       </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{t.due}</span>
-                    </div>
+                      <span className={`text-xs whitespace-nowrap ml-2 ${t.urgent ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>{t.due}</span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -513,34 +544,12 @@ export default function Index() {
             {/* ── СПРАВОЧНИКИ ── */}
             {infoTab === "Справочники" && (
               <div className="space-y-4">
-                {viewTemplate ? (
-                  <div className="space-y-4">
-                    <button onClick={() => setViewTemplate(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      <Icon name="ArrowLeft" size={15} fallback="Circle" /> Назад к справочникам
-                    </button>
-                    <div className="bg-white border border-border rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="font-semibold">{viewTemplate.title}</h2>
-                        <button
-                          onClick={() => {
-                            const blob = new Blob([viewTemplate.content], { type: "text/plain;charset=utf-8" });
-                            const a = document.createElement("a");
-                            a.href = URL.createObjectURL(blob);
-                            a.download = `${viewTemplate.title}.txt`;
-                            a.click();
-                          }}
-                          className="flex items-center gap-1.5 text-xs text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5 transition-colors"
-                        >
-                          <Icon name="Download" size={12} fallback="Circle" /> Скачать
-                        </button>
-                      </div>
-                      <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap bg-muted/40 rounded-lg p-4 max-h-[60vh] overflow-auto border border-border">{viewTemplate.content}</pre>
-                    </div>
-                  </div>
+                {editTemplate ? (
+                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-muted-foreground">Готовые шаблоны документов по охране труда</p>
+                      <p className="text-sm text-muted-foreground">Готовые шаблоны документов — заполняйте поля прямо на сайте</p>
                       <button onClick={() => setAddingTemplate(!addingTemplate)}
                         className="flex items-center gap-1.5 text-xs bg-primary text-white rounded-lg px-3 py-2 hover:bg-primary/90 transition-colors">
                         <Icon name="Plus" size={13} fallback="Plus" /> Добавить шаблон
@@ -567,12 +576,17 @@ export default function Index() {
                         <div key={tpl.id} className="bg-white border border-border rounded-xl p-5 flex flex-col">
                           <div className="flex items-start justify-between mb-2">
                             <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{tpl.category}</span>
+                            {tpl.fields?.length > 0 && (
+                              <span className="text-xs text-green-600 flex items-center gap-1">
+                                <Icon name="PenLine" size={11} fallback="Circle" /> {tpl.fields.length} полей
+                              </span>
+                            )}
                           </div>
                           <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
                           <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setViewTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg border border-primary text-primary hover:bg-primary/5 transition-colors font-medium">
-                            Открыть шаблон
+                          <button onClick={() => setEditTemplate(tpl)}
+                            className="w-full py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium flex items-center justify-center gap-1.5">
+                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить и скачать
                           </button>
                         </div>
                       ))}
@@ -585,35 +599,13 @@ export default function Index() {
             {/* ── МОИ СОУТ ── */}
             {infoTab === "Мои СОУТ" && (
               <div className="space-y-4">
-                {viewTemplate ? (
-                  <div className="space-y-4">
-                    <button onClick={() => setViewTemplate(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      <Icon name="ArrowLeft" size={15} fallback="Circle" /> Назад
-                    </button>
-                    <div className="bg-white border border-border rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="font-semibold">{viewTemplate.title}</h2>
-                        <button
-                          onClick={() => {
-                            const blob = new Blob([viewTemplate.content], { type: "text/plain;charset=utf-8" });
-                            const a = document.createElement("a");
-                            a.href = URL.createObjectURL(blob);
-                            a.download = `${viewTemplate.title}.txt`;
-                            a.click();
-                          }}
-                          className="flex items-center gap-1.5 text-xs text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
-                        >
-                          <Icon name="Download" size={12} fallback="Circle" /> Скачать
-                        </button>
-                      </div>
-                      <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap bg-muted/40 rounded-lg p-4 max-h-[60vh] overflow-auto border border-border">{viewTemplate.content}</pre>
-                    </div>
-                  </div>
+                {editTemplate ? (
+                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
                       <Icon name="Info" size={16} className="text-blue-600 shrink-0 mt-0.5" fallback="Circle" />
-                      <p className="text-sm text-blue-800">Специальная оценка условий труда (СОУТ) проводится раз в 5 лет. Здесь вы можете хранить карты СОУТ по рабочим местам.</p>
+                      <p className="text-sm text-blue-800">СОУТ проводится раз в 5 лет. Заполните карту по своему рабочему месту и скачайте готовый документ.</p>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       {SOUT_TEMPLATES.map(tpl => (
@@ -623,12 +615,13 @@ export default function Index() {
                               <Icon name="ClipboardList" size={16} className="text-green-700" fallback="Circle" />
                             </div>
                             <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">СОУТ</span>
+                            <span className="text-xs text-green-600 ml-auto">{tpl.fields.length} полей</span>
                           </div>
                           <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
                           <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setViewTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg border border-green-500 text-green-700 hover:bg-green-50 transition-colors font-medium">
-                            Открыть карту СОУТ
+                          <button onClick={() => setEditTemplate(tpl)}
+                            className="w-full py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-1.5">
+                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту СОУТ
                           </button>
                         </div>
                       ))}
@@ -641,35 +634,13 @@ export default function Index() {
             {/* ── ПРОФРИСКИ ── */}
             {infoTab === "ПрофРиски" && (
               <div className="space-y-4">
-                {viewTemplate ? (
-                  <div className="space-y-4">
-                    <button onClick={() => setViewTemplate(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      <Icon name="ArrowLeft" size={15} fallback="Circle" /> Назад
-                    </button>
-                    <div className="bg-white border border-border rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="font-semibold">{viewTemplate.title}</h2>
-                        <button
-                          onClick={() => {
-                            const blob = new Blob([viewTemplate.content], { type: "text/plain;charset=utf-8" });
-                            const a = document.createElement("a");
-                            a.href = URL.createObjectURL(blob);
-                            a.download = `${viewTemplate.title}.txt`;
-                            a.click();
-                          }}
-                          className="flex items-center gap-1.5 text-xs text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/5"
-                        >
-                          <Icon name="Download" size={12} fallback="Circle" /> Скачать
-                        </button>
-                      </div>
-                      <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap bg-muted/40 rounded-lg p-4 max-h-[60vh] overflow-auto border border-border">{viewTemplate.content}</pre>
-                    </div>
-                  </div>
+                {editTemplate ? (
+                  <TemplateEditor template={editTemplate} onBack={() => setEditTemplate(null)} />
                 ) : (
                   <>
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
                       <Icon name="AlertTriangle" size={16} className="text-amber-600 shrink-0 mt-0.5" fallback="Circle" />
-                      <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна для всех работодателей (ст. 214 ТК РФ). Карты рисков обновляются при изменении условий труда.</p>
+                      <p className="text-sm text-amber-800">Оценка профессиональных рисков обязательна (ст. 214 ТК РФ). Заполните карту и скачайте готовый документ.</p>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       {PROFRISK_TEMPLATES.map(tpl => (
@@ -679,12 +650,13 @@ export default function Index() {
                               <Icon name="AlertOctagon" size={16} className="text-amber-700" fallback="Circle" />
                             </div>
                             <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">ПрофРиск</span>
+                            <span className="text-xs text-amber-600 ml-auto">{tpl.fields.length} полей</span>
                           </div>
                           <h3 className="font-semibold text-sm mb-2 flex-1">{tpl.title}</h3>
                           <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{tpl.description}</p>
-                          <button onClick={() => setViewTemplate(tpl)}
-                            className="w-full py-2 text-sm rounded-lg border border-amber-500 text-amber-700 hover:bg-amber-50 transition-colors font-medium">
-                            Открыть карту рисков
+                          <button onClick={() => setEditTemplate(tpl)}
+                            className="w-full py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium flex items-center justify-center gap-1.5">
+                            <Icon name="PenLine" size={13} fallback="Circle" /> Заполнить карту рисков
                           </button>
                         </div>
                       ))}
