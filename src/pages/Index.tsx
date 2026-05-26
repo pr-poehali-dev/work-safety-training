@@ -434,7 +434,8 @@ function LogoutButton({ onDone }: { onDone: () => void }) {
 }
 
 export default function Index() {
-  const { user, unreadCount, loading: authLoading, completeTest, assignedTests } = useAuth();
+  const { user, unreadCount, loading: authLoading, completeTest, assignedTests,
+    assignedBriefings, completeBriefing } = useAuth();
   const [authModal, setAuthModal] = useState<false | "login" | "register" | "forgot" | "reset">(false);
   const [resetToken, setResetToken] = useState("");
   const [avatarMenu, setAvatarMenu] = useState(false);
@@ -565,7 +566,7 @@ export default function Index() {
     }
   }, [user?.id]);
 
-  const completeBriefing = (id: string) => {
+  const markBriefingDone = (id: string) => {
     setCompletedBriefings(prev => {
       const s = new Set(prev);
       s.add(id);
@@ -1682,68 +1683,130 @@ export default function Index() {
 
             {/* Стандартные инструктажи */}
             {(user?.role !== "employer" || briefingsTab === "standard") && (
-              <div className="grid md:grid-cols-2 gap-4">
-                {BRIEFINGS_DATA.map((b) => {
-                  const isDone = completedBriefings.has(b.id);
-                  const isDue = b.id === "repeat" && !isDone;
-                  return (
-                    <div key={b.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isDue ? "border-amber-300" : "border-border"}`}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isDone ? <StatusBadge status="done" /> : isDue ? <StatusBadge status="due" /> : <StatusBadge status="pending" />}
-                          {b.required && (
-                            <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+              <div className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-4">
+                  {BRIEFINGS_DATA.map((b) => {
+                    const isDone = completedBriefings.has(b.id);
+                    const isDue = b.id === "repeat" && !isDone;
+                    return (
+                      <div key={b.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isDue ? "border-amber-300" : "border-border"}`}>
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {isDone ? <StatusBadge status="done" /> : isDue ? <StatusBadge status="due" /> : <StatusBadge status="pending" />}
+                            {b.required && (
+                              <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+                            )}
+                            {b.variants && (
+                              <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">2 варианта</span>
+                            )}
+                          </div>
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
+                            <Icon name="Clock" size={12} fallback="Circle" />{b.duration} мин
+                          </span>
+                        </div>
+                        <h3 className="font-semibold text-base mb-1.5">{b.title}</h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed mb-4 flex-1">{b.subtitle}</p>
+                        <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
+                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length > 0 && (
+                            <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                              <Icon name="Play" size={11} fallback="Circle" />
+                              {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length} видео
+                            </span>
                           )}
-                          {b.variants && (
-                            <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">2 варианта</span>
+                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length > 0 && (
+                            <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                              <Icon name="Zap" size={11} fallback="Circle" />
+                              {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length} заданий
+                            </span>
                           )}
                         </div>
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
-                          <Icon name="Clock" size={12} fallback="Circle" />{b.duration} мин
-                        </span>
+                        <button
+                          onClick={() => setActiveBriefingId(b.id)}
+                          className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
+                            isDone ? "bg-muted text-foreground hover:bg-muted/80"
+                            : isDue ? "bg-amber-500 text-white hover:bg-amber-600"
+                            : "bg-primary text-white hover:bg-primary/90"
+                          }`}
+                        >
+                          {isDone ? "Пройти повторно" : isDue ? "Пройти (требуется)" : "Начать инструктаж"}
+                        </button>
                       </div>
-                      <h3 className="font-semibold text-base mb-1.5">{b.title}</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed mb-4 flex-1">{b.subtitle}</p>
-                      <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
-                        {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length > 0 && (
-                          <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
-                            <Icon name="Play" size={11} fallback="Circle" />
-                            {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length} видео
-                          </span>
-                        )}
-                        {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length > 0 && (
-                          <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
-                            <Icon name="Zap" size={11} fallback="Circle" />
-                            {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length} заданий
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setActiveBriefingId(b.id)}
-                        className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
-                          isDone ? "bg-muted text-foreground hover:bg-muted/80"
-                          : isDue ? "bg-amber-500 text-white hover:bg-amber-600"
-                          : "bg-primary text-white hover:bg-primary/90"
-                        }`}
-                      >
-                        {isDone ? "Пройти повторно" : isDue ? "Пройти (требуется)" : "Начать инструктаж"}
-                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Инструктажи от работодателя (для сотрудника) */}
+                {user?.role === "employee" && assignedBriefings.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Icon name="Building2" size={15} className="text-primary" fallback="Circle" />
+                      Назначены работодателем
+                    </h2>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {assignedBriefings.map(ab => {
+                        const isDone = !!ab.completed_at;
+                        const isOverdue = !isDone && ab.due_date && new Date(ab.due_date) < new Date();
+                        return (
+                          <div key={ab.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isOverdue ? "border-red-300" : isDone ? "border-green-200" : "border-primary/30"}`}>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isDone
+                                  ? <StatusBadge status="done" />
+                                  : isOverdue
+                                  ? <StatusBadge status="due" />
+                                  : <StatusBadge status="pending" />}
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">От работодателя</span>
+                              </div>
+                              {ab.due_date && (
+                                <span className={`text-xs whitespace-nowrap ml-2 ${isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                                  до {ab.due_date.slice(0, 10)}
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="font-semibold text-base mb-1">{ab.briefing_title}</h3>
+                            {ab.employer_fio && (
+                              <p className="text-xs text-muted-foreground mb-3 flex-1">Назначил: {ab.employer_fio}</p>
+                            )}
+                            {isDone && (
+                              <p className="text-xs text-green-700 mb-3 flex items-center gap-1">
+                                <Icon name="CheckCircle" size={12} fallback="Check" />
+                                Пройдено {ab.completed_at?.slice(0, 10)}
+                              </p>
+                            )}
+                            <button
+                              onClick={() => startCustomBriefing(ab.briefing_id)}
+                              className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
+                                isDone ? "bg-muted text-foreground hover:bg-muted/80"
+                                : isOverdue ? "bg-red-500 text-white hover:bg-red-600"
+                                : "bg-primary text-white hover:bg-primary/90"
+                              }`}
+                            >
+                              {isDone ? "Пройти повторно" : "Начать инструктаж"}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {active === "briefings" && activeBriefingId && (() => {
-          // Кастомный инструктаж
+          // Кастомный инструктаж — загружен с сервера
           if (activeBriefingId.startsWith("custom_briefing_") && customBriefingData) {
+            const customId = Number(activeBriefingId.replace("custom_briefing_", ""));
             return (
               <BriefingPlayer
                 briefing={customBriefingData}
                 onExit={() => { setActiveBriefingId(null); setCustomBriefingData(null); }}
-                onComplete={() => { setActiveBriefingId(null); setCustomBriefingData(null); }}
+                onComplete={() => {
+                  completeBriefing(customId);
+                  setActiveBriefingId(null);
+                  setCustomBriefingData(null);
+                }}
               />
             );
           }
@@ -1755,7 +1818,7 @@ export default function Index() {
               briefing={briefing}
               onExit={() => setActiveBriefingId(null)}
               onComplete={(id) => {
-                completeBriefing(id);
+                markBriefingDone(id);
                 setActiveBriefingId(null);
               }}
             />

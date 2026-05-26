@@ -38,19 +38,32 @@ export interface AssignedTest {
   employer_fio?: string;
 }
 
+export interface AssignedBriefing {
+  id: number;
+  briefing_id: number;
+  briefing_title: string;
+  assigned_at: string;
+  due_date: string | null;
+  completed_at: string | null;
+  employer_fio?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   notifications: Notification[];
   unreadCount: number;
   assignedTests: AssignedTest[];
+  assignedBriefings: AssignedBriefing[];
   login: (email: string, password: string) => Promise<string | null>;
   register: (data: RegisterData) => Promise<string | null>;
   logout: () => Promise<void>;
   fetchNotifications: () => Promise<void>;
   markNotificationsRead: () => Promise<void>;
   fetchAssignedTests: () => Promise<void>;
+  fetchAssignedBriefings: () => Promise<void>;
   completeTest: (test_id: string, score: number) => Promise<void>;
+  completeBriefing: (briefing_id: number) => Promise<void>;
   getCompanies: () => Promise<Company[]>;
   authFetch: (url: string, opts?: RequestInit) => Promise<Response>;
   EMPLOYER_URL: string;
@@ -79,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [assignedTests, setAssignedTests] = useState<AssignedTest[]>([]);
+  const [assignedBriefings, setAssignedBriefings] = useState<AssignedBriefing[]>([]);
 
   const authFetch = (url: string, opts: RequestInit = {}) => {
     const sid = getCookie("session_id");
@@ -119,9 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       fetchNotifications();
       fetchAssignedTests();
+      fetchAssignedBriefings();
     } else {
       setNotifications([]);
       setAssignedTests([]);
+      setAssignedBriefings([]);
     }
   }, [user?.id]);
 
@@ -226,6 +242,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   };
 
+  const fetchAssignedBriefings = async () => {
+    try {
+      const s = sid();
+      if (!s) return;
+      const res = await fetch(`${EMPLOYEE_URL}?action=assigned_briefings`, {
+        headers: { "X-Cookie": `session_id=${s}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAssignedBriefings(data.briefings || []);
+      }
+    } catch { /* ignore */ }
+  };
+
   const completeTest = async (test_id: string, score: number) => {
     try {
       const s = sid();
@@ -236,6 +266,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ test_id, score }),
       });
       await fetchAssignedTests();
+    } catch { /* ignore */ }
+  };
+
+  const completeBriefing = async (briefing_id: number) => {
+    try {
+      const s = sid();
+      if (!s) return;
+      await fetch(`${EMPLOYEE_URL}?action=complete_briefing`, {
+        method: "POST",
+        headers: { "X-Cookie": `session_id=${s}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ briefing_id }),
+      });
+      await fetchAssignedBriefings();
     } catch { /* ignore */ }
   };
 
@@ -254,10 +297,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, notifications, unreadCount, assignedTests,
+      user, loading, notifications, unreadCount, assignedTests, assignedBriefings,
       login, register, logout,
       fetchNotifications, markNotificationsRead,
-      fetchAssignedTests, completeTest,
+      fetchAssignedTests, fetchAssignedBriefings, completeTest, completeBriefing,
       getCompanies, authFetch,
       EMPLOYER_URL, EMPLOYEE_URL,
     }}>

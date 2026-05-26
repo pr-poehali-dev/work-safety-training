@@ -58,7 +58,7 @@ interface Props {
   onPreview?: (id: number) => void;
 }
 
-type View = "list" | "editor";
+type View = "list" | "editor" | "assign" | "progress";
 
 const BLOCK_TYPE_LABELS: Record<Block["type"], string> = {
   text: "Текст",
@@ -341,6 +341,10 @@ function BlockEditor({ block, onChange, onDelete, onUp, onDown, isFirst, isLast 
   );
 }
 
+// ─── Интерфейсы для назначения/статистики ─────────────────────────────────────
+interface Employee { id: number; fio: string; email: string; }
+interface ProgressRow { id: number; fio: string; email: string; assigned_at: string; due_date: string | null; completed_at: string | null; }
+
 // ─── Главный компонент ─────────────────────────────────────────────────────────
 export default function BriefingEditor({ onBack, onPreview }: Props) {
   const [view, setView] = useState<View>("list");
@@ -359,6 +363,19 @@ export default function BriefingEditor({ onBack, onPreview }: Props) {
   // Панель добавления блока
   const [addOpen, setAddOpen] = useState(false);
 
+  // Назначение
+  const [assignBriefing, setAssignBriefing] = useState<CustomBriefing | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmps, setSelectedEmps] = useState<number[]>([]);
+  const [dueDate, setDueDate] = useState("");
+  const [empSearch, setEmpSearch] = useState("");
+  const [assigning, setAssigning] = useState(false);
+
+  // Статистика
+  const [progressBriefing, setProgressBriefing] = useState<CustomBriefing | null>(null);
+  const [progressRows, setProgressRows] = useState<ProgressRow[]>([]);
+  const [progressLoading, setProgressLoading] = useState(false);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const load = useCallback(async () => {
@@ -372,6 +389,36 @@ export default function BriefingEditor({ onBack, onPreview }: Props) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const openAssign = async (b: CustomBriefing) => {
+    setAssignBriefing(b);
+    setSelectedEmps([]); setDueDate(""); setEmpSearch("");
+    const res = await apiFetch("employees");
+    if (res.ok) { const d = await res.json(); setEmployees(d.employees || []); }
+    setView("assign");
+  };
+
+  const sendAssign = async () => {
+    if (!assignBriefing || selectedEmps.length === 0) return;
+    setAssigning(true);
+    const res = await apiFetch("briefing_assign", {
+      method: "POST",
+      body: JSON.stringify({ briefing_id: assignBriefing.id, employee_ids: selectedEmps, due_date: dueDate || null }),
+    });
+    const d = await res.json();
+    setAssigning(false);
+    if (res.ok) { showToast(`Инструктаж назначен ${d.assigned} сотруднику(ам)`); setView("list"); }
+    else showToast(d.error || "Ошибка назначения");
+  };
+
+  const openProgress = async (b: CustomBriefing) => {
+    setProgressBriefing(b);
+    setProgressLoading(true);
+    setView("progress");
+    const res = await apiFetch("briefing_progress", {}, { id: String(b.id) });
+    if (res.ok) { const d = await res.json(); setProgressRows(d.progress || []); }
+    setProgressLoading(false);
+  };
 
   const openNew = () => {
     setEditId(null);
@@ -489,16 +536,24 @@ export default function BriefingEditor({ onBack, onPreview }: Props) {
                     <span className="flex items-center gap-1"><Icon name="Clock" size={11} fallback="Circle" />{b.duration} мин</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                  <button onClick={() => openAssign(b)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 font-medium transition-colors">
+                    <Icon name="Send" size={12} fallback="Circle" /> Назначить
+                  </button>
+                  <button onClick={() => openProgress(b)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-primary/40 text-primary hover:bg-primary/5 transition-colors">
+                    <Icon name="BarChart2" size={12} fallback="Circle" /> Прогресс
+                  </button>
                   {onPreview && (
                     <button onClick={() => onPreview(b.id)}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 font-medium transition-colors">
-                      <Icon name="Play" size={12} fallback="Circle" /> Просмотреть
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted transition-colors">
+                      <Icon name="Play" size={12} fallback="Circle" /> Просмотр
                     </button>
                   )}
                   <button onClick={() => openEdit(b)}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border hover:bg-muted transition-colors">
-                    <Icon name="Pencil" size={12} fallback="Circle" /> Редактировать
+                    <Icon name="Pencil" size={12} fallback="Circle" /> Изменить
                   </button>
                   <button onClick={() => deleteBriefing(b)}
                     className="w-7 h-7 flex items-center justify-center rounded-lg border border-red-200 hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
@@ -512,6 +567,183 @@ export default function BriefingEditor({ onBack, onPreview }: Props) {
       )}
     </div>
   );
+
+  // ── НАЗНАЧИТЬ ─────────────────────────────────────────────────────────────
+  if (view === "assign") {
+    const filteredEmps = employees.filter(e =>
+      !empSearch || e.fio.toLowerCase().includes(empSearch.toLowerCase()) || e.email.toLowerCase().includes(empSearch.toLowerCase())
+    );
+    return (
+      <div className="space-y-4">
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-primary text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+            <Icon name="CheckCircle" size={15} fallback="Circle" /> {toast}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView("list")} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+            <Icon name="ArrowLeft" size={16} fallback="Circle" />
+          </button>
+          <div>
+            <h2 className="font-semibold text-base">Назначить инструктаж</h2>
+            <p className="text-xs text-muted-foreground">«{assignBriefing?.title}»</p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium mb-1.5">Срок выполнения <span className="text-muted-foreground font-normal">(необязательно)</span></label>
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-2">Выберите сотрудников *</label>
+            <div className="relative mb-2">
+              <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" fallback="Circle" />
+              <input value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                placeholder="Поиск по ФИО или email..."
+                className="w-full border border-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div className="border border-border rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+              {filteredEmps.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-8">Сотрудников не найдено</p>
+              ) : filteredEmps.map(emp => {
+                const sel = selectedEmps.includes(emp.id);
+                return (
+                  <button key={emp.id}
+                    onClick={() => setSelectedEmps(prev => prev.includes(emp.id) ? prev.filter(e => e !== emp.id) : [...prev, emp.id])}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-border/50 last:border-0 ${sel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
+                    <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${sel ? "bg-primary border-primary" : "border-border"}`}>
+                      {sel && <Icon name="Check" size={10} className="text-white" fallback="Check" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{emp.fio}</p>
+                      <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedEmps.length > 0 && (
+              <p className="text-xs text-primary font-medium mt-2 flex items-center gap-1">
+                <Icon name="Users" size={12} fallback="Circle" /> Выбрано: {selectedEmps.length}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={sendAssign} disabled={assigning || selectedEmps.length === 0}
+            className="flex-1 py-3 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors">
+            {assigning ? "Отправляем..." : `Назначить (${selectedEmps.length})`}
+          </button>
+          <button onClick={() => setView("list")} className="px-5 py-3 rounded-xl border border-border text-sm hover:bg-muted transition-colors">
+            Отмена
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ПРОГРЕСС ──────────────────────────────────────────────────────────────
+  if (view === "progress") {
+    const done = progressRows.filter(r => r.completed_at).length;
+    const total = progressRows.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    return (
+      <div className="space-y-4">
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-primary text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+            <Icon name="CheckCircle" size={15} fallback="Circle" /> {toast}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView("list")} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+            <Icon name="ArrowLeft" size={16} fallback="Circle" />
+          </button>
+          <div>
+            <h2 className="font-semibold text-base">Прогресс прохождения</h2>
+            <p className="text-xs text-muted-foreground">«{progressBriefing?.title}»</p>
+          </div>
+        </div>
+
+        {/* Сводка */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Назначено", value: total, icon: "Users", color: "text-foreground" },
+            { label: "Пройдено", value: done, icon: "CheckCircle", color: "text-green-600" },
+            { label: "Ожидает", value: total - done, icon: "Clock", color: "text-amber-600" },
+          ].map(s => (
+            <div key={s.label} className="bg-white border border-border rounded-xl p-4 text-center">
+              <Icon name={s.icon as "Users"} size={20} className={`mx-auto mb-1 ${s.color}`} fallback="Circle" />
+              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {total > 0 && (
+          <div className="bg-white border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium">Общий прогресс</span>
+              <span className="text-xs font-bold text-primary">{pct}%</span>
+            </div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* Список */}
+        {progressLoading ? (
+          <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 bg-muted animate-pulse rounded-xl" />)}</div>
+        ) : progressRows.length === 0 ? (
+          <div className="text-center py-12 border-2 border-dashed border-border rounded-xl text-muted-foreground">
+            <Icon name="Users" size={36} className="mx-auto mb-2 opacity-20" fallback="Circle" />
+            <p className="text-sm font-medium">Инструктаж ещё никому не назначен</p>
+            <button onClick={() => openAssign(progressBriefing!)} className="mt-3 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">
+              Назначить сейчас
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white border border-border rounded-xl overflow-hidden">
+            <div className="grid grid-cols-4 gap-2 px-4 py-2 bg-muted/50 text-xs font-medium text-muted-foreground border-b border-border">
+              <span className="col-span-2">Сотрудник</span>
+              <span>Срок</span>
+              <span>Статус</span>
+            </div>
+            {progressRows.map(r => (
+              <div key={r.id} className="grid grid-cols-4 gap-2 px-4 py-3 border-b border-border/50 last:border-0 items-center">
+                <div className="col-span-2 min-w-0">
+                  <p className="text-sm font-medium truncate">{r.fio}</p>
+                  <p className="text-xs text-muted-foreground truncate">{r.email}</p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {r.due_date ? r.due_date.slice(0, 10) : "—"}
+                </span>
+                <span>
+                  {r.completed_at ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                      <Icon name="CheckCircle" size={11} fallback="Check" /> Пройдено
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                      <Icon name="Clock" size={11} fallback="Circle" /> Ожидает
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={() => openAssign(progressBriefing!)}
+          className="flex items-center gap-2 px-4 py-2.5 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium">
+          <Icon name="Send" size={14} fallback="Circle" /> Назначить ещё сотрудникам
+        </button>
+      </div>
+    );
+  }
 
   // ── РЕДАКТОР ──────────────────────────────────────────────────────────────
   return (

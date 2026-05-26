@@ -503,6 +503,96 @@ def handler(event: dict, context) -> dict:
             return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
                                     "duration": row[3], "blocks": blocks}})
 
+        # ?action=briefing_assign — назначить кастомный инструктаж сотрудникам
+        if action == "briefing_assign":
+            import json as _json
+            bid = body.get("briefing_id")
+            employee_ids = body.get("employee_ids") or []
+            due_date = body.get("due_date")
+            if not bid or not employee_ids:
+                return err("Укажите briefing_id и employee_ids")
+
+            cur.execute(
+                f"SELECT id, title FROM {SCHEMA}.custom_briefings WHERE id=%s AND company_id=%s AND title NOT LIKE '[УДАЛЁН]%%'",
+                (int(bid), company_id),
+            )
+            br = cur.fetchone()
+            if not br:
+                return err("Инструктаж не найден")
+            briefing_title = br[1]
+            assigned = 0
+            for eid in employee_ids:
+                cur.execute(
+                    f"SELECT id, fio, email FROM {SCHEMA}.users WHERE id=%s AND company_id=%s AND role='employee'",
+                    (int(eid), company_id),
+                )
+                emp = cur.fetchone()
+                if not emp:
+                    continue
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.assigned_briefings
+                               (employer_id, employee_id, briefing_id, briefing_title, due_date)
+                        VALUES (%s,%s,%s,%s,%s)
+                        ON CONFLICT (employee_id, briefing_id) DO UPDATE SET
+                            assigned_at=NOW(), due_date=EXCLUDED.due_date, completed_at=NULL""",
+                    (user["id"], int(eid), int(bid), briefing_title, due_date or None),
+                )
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.notifications (user_id, title, body) VALUES (%s,%s,%s)",
+                    (int(eid), "Назначен новый инструктаж",
+                     f"Работодатель {user['fio']} назначил вам инструктаж: «{briefing_title}»"
+                     + (f". Срок: {due_date}" if due_date else "")),
+                )
+                notif_html = (
+                    f"<h2>Вам назначен инструктаж</h2>"
+                    f"<p>Здравствуйте, <b>{emp[1]}</b>!</p>"
+                    f"<p>Работодатель <b>{user['fio']}</b> ({user['company_name']}) назначил вам инструктаж:</p>"
+                    f"<h3>«{briefing_title}»</h3>"
+                    + (f"<p>Срок прохождения: <b>{due_date}</b></p>" if due_date else "")
+                )
+                send_email(emp[2], f"Новый инструктаж: {briefing_title}", notif_html)
+                assigned += 1
+            conn.commit()
+            return ok({"ok": True, "assigned": assigned})
+
+        # ?action=briefing_progress&id=N — статистика прохождений по инструктажу
+        if action == "briefing_progress":
+            bid = qs.get("id")
+            if not bid:
+                return err("Укажите id")
+            cur.execute(
+                f"""SELECT ab.id, u.fio, u.email,
+                           ab.assigned_at::text, ab.due_date::text,
+                           ab.completed_at::text
+                    FROM {SCHEMA}.assigned_briefings ab
+                    JOIN {SCHEMA}.users u ON u.id = ab.employee_id
+                    WHERE ab.briefing_id=%s AND u.company_id=%s
+                    ORDER BY ab.assigned_at DESC""",
+                (int(bid), company_id),
+            )
+            rows = cur.fetchall()
+            progress = [{"id": r[0], "fio": r[1], "email": r[2],
+                         "assigned_at": r[3], "due_date": r[4],
+                         "completed_at": r[5]} for r in rows]
+            return ok({"progress": progress})
+
+        # ?action=briefings_overview — сводка по всем инструктажам компании
+        if action == "briefings_overview":
+            cur.execute(
+                f"""SELECT cb.id, cb.title,
+                           COUNT(ab.id) AS total_assigned,
+                           COUNT(ab.completed_at) AS total_done
+                    FROM {SCHEMA}.custom_briefings cb
+                    LEFT JOIN {SCHEMA}.assigned_briefings ab ON ab.briefing_id = cb.id
+                    WHERE cb.company_id = %s AND cb.title NOT LIKE '[УДАЛЁН]%%'
+                    GROUP BY cb.id ORDER BY cb.updated_at DESC""",
+                (company_id,),
+            )
+            rows = cur.fetchall()
+            overview = [{"id": r[0], "title": r[1], "total_assigned": r[2], "total_done": r[3]}
+                        for r in rows]
+            return ok({"overview": overview})
+
         return err(f"Неизвестное действие: '{action}'", 400)
 
     finally:

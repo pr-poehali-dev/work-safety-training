@@ -1,6 +1,6 @@
 """
-Сотрудник: уведомления, назначенные тесты, отправка результата.
-Роутинг через ?action=notifications|read|assigned|complete
+Сотрудник: уведомления, назначенные тесты и инструктажи, отправка результата.
+Роутинг через ?action=notifications|read|assigned|complete|assigned_briefings|complete_briefing
 """
 import json
 import os
@@ -117,6 +117,40 @@ def handler(event: dict, context) -> dict:
                     SET completed_at = NOW(), score = %s
                     WHERE employee_id = %s AND test_id = %s""",
                 (int(score), user["id"], test_id),
+            )
+            conn.commit()
+            return ok({"ok": True})
+
+        # ?action=assigned_briefings — список назначенных инструктажей
+        if action == "assigned_briefings":
+            cur.execute(
+                f"""SELECT ab.id, ab.briefing_id, ab.briefing_title,
+                           ab.assigned_at::text, ab.due_date::text, ab.completed_at::text,
+                           u.fio AS employer_fio
+                    FROM {SCHEMA}.assigned_briefings ab
+                    JOIN {SCHEMA}.users u ON u.id = ab.employer_id
+                    WHERE ab.employee_id = %s
+                    ORDER BY ab.assigned_at DESC""",
+                (user["id"],),
+            )
+            rows = cur.fetchall()
+            briefings = [{"id": r[0], "briefing_id": r[1], "briefing_title": r[2],
+                          "assigned_at": r[3], "due_date": r[4],
+                          "completed_at": r[5], "employer_fio": r[6]}
+                         for r in rows]
+            return ok({"briefings": briefings})
+
+        # ?action=complete_briefing — отметить инструктаж пройденным
+        if action == "complete_briefing":
+            body = json.loads(event.get("body") or "{}")
+            briefing_id = body.get("briefing_id")
+            if not briefing_id:
+                return err("Укажите briefing_id")
+            cur.execute(
+                f"""UPDATE {SCHEMA}.assigned_briefings
+                       SET completed_at = NOW()
+                     WHERE employee_id = %s AND briefing_id = %s""",
+                (user["id"], int(briefing_id)),
             )
             conn.commit()
             return ok({"ok": True})
