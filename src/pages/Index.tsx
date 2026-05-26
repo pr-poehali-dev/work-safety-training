@@ -18,6 +18,7 @@ import EmployerPanel from "@/components/EmployerPanel";
 import DocumentsUploader from "@/components/DocumentsUploader";
 import CompanyDocsList from "@/components/CompanyDocsList";
 import CompanyContacts from "@/components/CompanyContacts";
+import CompanyChat from "@/components/CompanyChat";
 import { useAuth } from "@/contexts/AuthContext";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
@@ -30,7 +31,7 @@ interface NewsItem {
   date: string;
 }
 
-type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "employer" | "checklists" | "contacts";
+type Section = "home" | "info" | "tests" | "briefings" | "cabinet" | "employer" | "checklists" | "contacts" | "messages";
 type TestMode = "list" | "running" | "results";
 
 const NAV_ITEMS: { id: Section; label: string; icon: string; employerOnly?: boolean }[] = [
@@ -150,6 +151,9 @@ export default function Index() {
   const [checklistState, setChecklistState] = useState(CHECKLISTS_DATA);
   const [checklistNewText, setChecklistNewText] = useState<string[]>(CHECKLISTS_DATA.map(() => ""));
   const [notification, setNotification] = useState(true);
+  const [chatReceiverId, setChatReceiverId] = useState<number | undefined>(undefined);
+  const [chatSubject, setChatSubject] = useState<string>("");
+  const [chatUnread, setChatUnread] = useState(0);
 
   // News state
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -373,6 +377,20 @@ export default function Index() {
                       <Icon name="UserCircle" size={15} fallback="Circle" />
                       Личный кабинет
                     </button>
+                    {user.company_id && (
+                      <button
+                        onClick={() => { setAvatarMenu(false); setChatReceiverId(undefined); setChatSubject(""); navigate("messages"); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                      >
+                        <Icon name="MessageSquare" size={15} fallback="Circle" />
+                        Переписка
+                        {chatUnread > 0 && (
+                          <span className="ml-auto w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center font-bold">
+                            {chatUnread > 9 ? "9+" : chatUnread}
+                          </span>
+                        )}
+                      </button>
+                    )}
                     <div className="border-t border-border mt-1">
                       <LogoutButton onDone={() => { setAvatarMenu(false); navigate("home"); }} />
                     </div>
@@ -1480,27 +1498,68 @@ export default function Index() {
                       <Icon name="MessageSquare" size={15} className="text-primary" fallback="Circle" />
                       Написать специалисту по ОТ
                     </h2>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">Тема</label>
-                        <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:border-primary">
-                          <option>Вопрос по инструктажу</option>
-                          <option>Вопрос по тестированию</option>
-                          <option>Сообщить об опасности</option>
-                          <option>Другое</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">Сообщение</label>
-                        <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background resize-none h-24 focus:outline-none focus:border-primary" placeholder="Опишите ваш вопрос..." />
-                      </div>
-                      <button className="w-full bg-primary text-white py-2 text-sm rounded-lg font-medium hover:bg-primary/90 transition-colors">
-                        Отправить
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Отправьте сообщение напрямую специалисту по охране труда вашей компании. Ответ придёт в переписку.
+                    </p>
+                    {[
+                      "Вопрос по инструктажу",
+                      "Вопрос по тестированию",
+                      "Сообщить об опасности",
+                      "Другое",
+                    ].map(topic => (
+                      <button
+                        key={topic}
+                        onClick={() => {
+                          setChatReceiverId(undefined);
+                          setChatSubject(topic);
+                          navigate("messages");
+                        }}
+                        className="w-full text-left px-3 py-2.5 mb-2 text-sm rounded-lg border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors flex items-center gap-2"
+                      >
+                        <Icon name="ChevronRight" size={13} className="text-muted-foreground" fallback="Circle" />
+                        {topic}
                       </button>
-                    </div>
+                    ))}
+                    <button
+                      onClick={() => { setChatReceiverId(undefined); setChatSubject(""); navigate("messages"); }}
+                      className="w-full mt-1 bg-primary text-white py-2 text-sm rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Icon name="MessageSquare" size={14} fallback="Circle" />
+                      Открыть переписку
+                    </button>
                   </div>
                 </div>
               </div>
+            </div>
+          )
+        )}
+        {active === "messages" && (
+          !user ? (
+            <div className="animate-fade-in text-center py-24 space-y-4">
+              <Icon name="Lock" size={48} className="mx-auto text-muted-foreground/30" fallback="Circle" />
+              <p className="font-semibold text-lg">Раздел доступен только зарегистрированным</p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={() => setAuthModal("login")} className="px-5 py-2.5 rounded-xl border border-primary text-primary font-medium text-sm">Войти</button>
+                <button onClick={() => setAuthModal("register")} className="px-5 py-2.5 rounded-xl bg-primary text-white font-medium text-sm">Зарегистрироваться</button>
+              </div>
+            </div>
+          ) : !user.company_id ? (
+            <div className="animate-fade-in text-center py-24">
+              <Icon name="Building2" size={48} className="mx-auto text-muted-foreground/30 mb-4" fallback="Circle" />
+              <p className="font-semibold">Компания не привязана</p>
+            </div>
+          ) : (
+            <div className="animate-fade-in space-y-5">
+              <div>
+                <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
+                <h1 className="text-2xl font-semibold">Переписка</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">{user.company_name}</p>
+              </div>
+              <CompanyChat
+                initialReceiverId={chatReceiverId}
+                initialSubject={chatSubject}
+                onUnreadChange={setChatUnread}
+              />
             </div>
           )
         )}

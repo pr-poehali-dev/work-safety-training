@@ -410,11 +410,15 @@ export default function TemplateEditor({ template, onBack }: Props) {
             dangerouslySetInnerHTML={{ __html: editorHtml }}
             onInput={autosave}
             onBlur={autosave}
-            className="min-h-[400px] p-6 text-sm leading-relaxed focus:outline-none"
+            className="min-h-[400px] p-6 focus:outline-none"
             style={{
               fontFamily: "Times New Roman, serif",
               fontSize: "14pt",
               lineHeight: "1.6",
+              direction: "ltr",
+              unicodeBidi: "plaintext",
+              textAlign: "left",
+              writingMode: "horizontal-tb",
             }}
           />
 

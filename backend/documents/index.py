@@ -330,6 +330,124 @@ def handler(event: dict, context) -> dict:
             rows = cur.fetchall()
             return ok({"employees": [{"id": r[0], "fio": r[1], "email": r[2]} for r in rows]})
 
+        # ── ПЕРЕПИСКА ────────────────────────────────────────────────────────
+
+        # ?action=msg_unread — количество непрочитанных сообщений
+        if action == "msg_unread":
+            cur.execute(
+                f"SELECT COUNT(*) FROM {SCHEMA}.messages WHERE receiver_id = %s AND is_read = FALSE",
+                (user["id"],),
+            )
+            return ok({"count": cur.fetchone()[0]})
+
+        # ?action=msg_list — список собеседников
+        if action == "msg_list":
+            if user["role"] == "employer":
+                cur.execute(
+                    f"""SELECT u.id, u.fio, u.email,
+                            COUNT(m.id) FILTER (WHERE m.receiver_id = %s AND m.is_read = FALSE) as unread,
+                            MAX(m.created_at) as last_at,
+                            (SELECT body FROM {SCHEMA}.messages m2
+                             WHERE ((m2.sender_id = u.id AND m2.receiver_id = %s)
+                                 OR (m2.sender_id = %s AND m2.receiver_id = u.id))
+                             ORDER BY m2.created_at DESC LIMIT 1) as last_msg
+                        FROM {SCHEMA}.users u
+                        LEFT JOIN {SCHEMA}.messages m ON
+                            (m.sender_id = u.id AND m.receiver_id = %s)
+                            OR (m.sender_id = %s AND m.receiver_id = u.id)
+                        WHERE u.company_id = %s AND u.role = 'employee'
+                        GROUP BY u.id, u.fio, u.email
+                        ORDER BY last_at DESC NULLS LAST, u.fio""",
+                    (user["id"], user["id"], user["id"], user["id"], user["id"], company_id),
+                )
+            else:
+                cur.execute(
+                    f"""SELECT u.id, u.fio, u.email,
+                            COUNT(m.id) FILTER (WHERE m.receiver_id = %s AND m.is_read = FALSE) as unread,
+                            MAX(m.created_at) as last_at,
+                            (SELECT body FROM {SCHEMA}.messages m2
+                             WHERE ((m2.sender_id = u.id AND m2.receiver_id = %s)
+                                 OR (m2.sender_id = %s AND m2.receiver_id = u.id))
+                             ORDER BY m2.created_at DESC LIMIT 1) as last_msg
+                        FROM {SCHEMA}.users u
+                        LEFT JOIN {SCHEMA}.messages m ON
+                            (m.sender_id = u.id AND m.receiver_id = %s)
+                            OR (m.sender_id = %s AND m.receiver_id = u.id)
+                        WHERE u.company_id = %s AND u.role = 'employer'
+                        GROUP BY u.id, u.fio, u.email
+                        ORDER BY last_at DESC NULLS LAST""",
+                    (user["id"], user["id"], user["id"], user["id"], user["id"], company_id),
+                )
+            rows = cur.fetchall()
+            contacts = [{"id": r[0], "fio": r[1], "email": r[2],
+                         "unread": r[3] or 0, "last_at": r[4], "last_msg": r[5]}
+                        for r in rows]
+            return ok({"contacts": contacts})
+
+        # ?action=msg_thread&with_user_id=N — история переписки
+        if action == "msg_thread":
+            other_id = qs.get("with_user_id")
+            if not other_id:
+                return err("Укажите with_user_id")
+            cur.execute(
+                f"SELECT id, fio, role FROM {SCHEMA}.users WHERE id = %s AND company_id = %s",
+                (int(other_id), company_id),
+            )
+            other = cur.fetchone()
+            if not other:
+                return err("Собеседник не найден")
+            cur.execute(
+                f"""SELECT id, sender_id, receiver_id, subject, body, is_read, created_at::text
+                    FROM {SCHEMA}.messages
+                    WHERE company_id = %s
+                      AND ((sender_id = %s AND receiver_id = %s)
+                        OR (sender_id = %s AND receiver_id = %s))
+                    ORDER BY created_at ASC""",
+                (company_id, user["id"], int(other_id), int(other_id), user["id"]),
+            )
+            msgs = [{"id": r[0], "sender_id": r[1], "receiver_id": r[2],
+                     "subject": r[3], "body": r[4], "is_read": r[5], "created_at": r[6]}
+                    for r in cur.fetchall()]
+            cur.execute(
+                f"""UPDATE {SCHEMA}.messages SET is_read = TRUE
+                    WHERE company_id = %s AND sender_id = %s AND receiver_id = %s AND is_read = FALSE""",
+                (company_id, int(other_id), user["id"]),
+            )
+            conn.commit()
+            return ok({"messages": msgs, "other": {"id": other[0], "fio": other[1], "role": other[2]}})
+
+        # ?action=msg_send — отправить сообщение
+        if action == "msg_send":
+            receiver_id = body.get("receiver_id")
+            msg_body = (body.get("body") or "").strip()
+            subject = (body.get("subject") or "").strip()
+            if not receiver_id or not msg_body:
+                return err("Укажите receiver_id и body")
+            cur.execute(
+                f"SELECT id, fio FROM {SCHEMA}.users WHERE id = %s AND company_id = %s",
+                (int(receiver_id), company_id),
+            )
+            receiver = cur.fetchone()
+            if not receiver:
+                return err("Получатель не найден")
+            cur.execute(
+                f"""INSERT INTO {SCHEMA}.messages (company_id, sender_id, receiver_id, subject, body)
+                    VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at::text""",
+                (company_id, user["id"], int(receiver_id), subject, msg_body),
+            )
+            row = cur.fetchone()
+            notif = f"Сообщение от {user['fio']}"
+            if subject:
+                notif += f": {subject}"
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.notifications (user_id, title, body) VALUES (%s, %s, %s)",
+                (int(receiver_id), "Новое сообщение", notif),
+            )
+            conn.commit()
+            return ok({"ok": True, "message_id": row[0], "created_at": row[1],
+                       "sender_id": user["id"], "receiver_id": int(receiver_id),
+                       "body": msg_body, "subject": subject})
+
         return err(f"Неизвестное действие: '{action}'", 400)
 
     finally:
