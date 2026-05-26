@@ -897,20 +897,57 @@ export default function Index() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {STATS.map((s, i) => (
-                <div key={i} className="bg-white border border-border rounded-lg p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center">
-                      <Icon name={s.icon} size={15} className="text-primary" fallback="Circle" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-semibold text-foreground">{s.value}</div>
-                  {s.total && <p className="text-xs text-muted-foreground mt-0.5">из {s.total} · {s.label}</p>}
-                  {!s.total && <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>}
+            {(() => {
+              const doneTests = Object.keys(completedTests).length;
+              const totalTests = TESTS_DATA.length;
+              const doneBriefings = completedBriefings.size;
+              const totalBriefings = BRIEFINGS_DATA.length;
+              const doneChecklists = checklistState.reduce((s, c) => s + c.items.filter(i => i.done).length, 0);
+              const totalChecklists = checklistState.reduce((s, c) => s + c.items.length, 0);
+              // Ближайший назначенный инструктаж с дедлайном
+              const nextDue = assignedBriefings
+                .filter(ab => !ab.completed_at && ab.due_date)
+                .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0];
+              const daysLeft = nextDue
+                ? Math.max(0, Math.ceil((new Date(nextDue.due_date!).getTime() - Date.now()) / 86400000))
+                : null;
+
+              const cards = [
+                { label: "Пройдено тестов", value: doneTests, sub: `из ${totalTests}`, icon: "ClipboardCheck", section: "tests" as const },
+                { label: "Инструктажей", value: doneBriefings, sub: `из ${totalBriefings}`, icon: "BookOpen", section: "briefings" as const },
+                { label: "Чек-листов", value: doneChecklists, sub: `из ${totalChecklists} пунктов`, icon: "ListChecks", section: "checklists" as const },
+                {
+                  label: daysLeft !== null ? "Дней до инструктажа" : "До инструктажа",
+                  value: daysLeft !== null ? daysLeft : "—",
+                  sub: daysLeft !== null ? nextDue!.briefing_title : "Нет назначенных",
+                  icon: "Bell",
+                  section: "briefings" as const,
+                },
+              ];
+
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {cards.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => navigate(s.section)}
+                      className="bg-white border border-border rounded-lg p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/40 text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                          <Icon name={s.icon as "Bell"} size={15} className="text-primary" fallback="Circle" />
+                        </div>
+                      </div>
+                      <div className="text-2xl font-semibold text-foreground">{s.value}</div>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                        {s.sub && <span className="font-medium">{s.sub} · </span>}
+                        {s.label}
+                      </p>
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             <div className="grid md:grid-cols-2 gap-6">
               <div className="bg-white border border-border rounded-lg p-5">

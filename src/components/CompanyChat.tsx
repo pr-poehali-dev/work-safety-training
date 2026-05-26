@@ -52,6 +52,7 @@ export default function CompanyChat({ initialReceiverId, initialSubject, onUnrea
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [subject, setSubject] = useState(initialSubject || "");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [loadingContacts, setLoadingContacts] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [sending, setSending] = useState(false);
@@ -138,6 +139,19 @@ export default function CompanyChat({ initialReceiverId, initialSubject, onUnrea
       loadContacts();
     }
     setSending(false);
+  };
+
+  const deleteMessage = async (msgId: number) => {
+    setDeletingId(msgId);
+    const res = await api("msg_delete", {
+      method: "POST",
+      body: JSON.stringify({ message_id: msgId }),
+    });
+    if (res.ok) {
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      loadContacts();
+    }
+    setDeletingId(null);
   };
 
   const formatTime = (iso: string) => {
@@ -256,8 +270,20 @@ export default function CompanyChat({ initialReceiverId, initialSubject, onUnrea
               ) : (
                 messages.map(msg => {
                   const isMine = msg.sender_id === user.id;
+                  const isDeleting = deletingId === msg.id;
                   return (
-                    <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                    <div key={msg.id} className={`flex group ${isMine ? "justify-end" : "justify-start"}`}>
+                      {/* Кнопка удаления — только своих, появляется при hover */}
+                      {isMine && (
+                        <button
+                          onClick={() => deleteMessage(msg.id)}
+                          disabled={isDeleting}
+                          className="self-center mr-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-red-100 text-muted-foreground hover:text-red-500 shrink-0 disabled:opacity-40"
+                          title="Удалить сообщение"
+                        >
+                          <Icon name={isDeleting ? "Loader2" : "Trash2"} size={13} fallback="Trash" className={isDeleting ? "animate-spin" : ""} />
+                        </button>
+                      )}
                       <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
                         isMine
                           ? "bg-primary text-white rounded-br-sm"
@@ -287,14 +313,12 @@ export default function CompanyChat({ initialReceiverId, initialSubject, onUnrea
 
             {/* Поле ввода */}
             <div className="border-t border-border p-3 space-y-2">
-              {!subject && (
-                <input
-                  value={subject}
-                  onChange={e => setSubject(e.target.value)}
-                  placeholder="Тема (необязательно)"
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
-                />
-              )}
+              <input
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+                placeholder="Тема (необязательно)"
+                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+              />
               <div className="flex gap-2">
                 <textarea
                   value={text}

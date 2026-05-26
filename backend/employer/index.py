@@ -90,6 +90,28 @@ def handler(event: dict, context) -> dict:
         user = get_user(cur, get_session_id(event))
         if not user:
             return err("Не авторизован", 401)
+
+        # briefing_for_employee доступен любому авторизованному из компании
+        if action == "briefing_for_employee":
+            import json as _json
+            bid = qs.get("id")
+            if not bid:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, subtitle, duration FROM {SCHEMA}.custom_briefings WHERE id=%s AND company_id=%s AND title NOT LIKE '[УДАЛЁН]%%'",
+                (int(bid), user["company_id"]),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Инструктаж не найден")
+            cur.execute(
+                f"SELECT block_type, data::text FROM {SCHEMA}.custom_briefing_blocks WHERE briefing_id=%s AND sort_order >= 0 ORDER BY sort_order",
+                (int(bid),),
+            )
+            blocks = [{"type": r[0], **_json.loads(r[1])} for r in cur.fetchall()]
+            return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
+                                    "duration": row[3], "blocks": blocks}})
+
         if user["role"] != "employer":
             return err("Доступ запрещён", 403)
 
@@ -481,27 +503,6 @@ def handler(event: dict, context) -> dict:
                 return err("Инструктаж не найден или нет доступа")
             conn.commit()
             return ok({"ok": True})
-
-        # ?action=briefing_for_employee&id=N — инструктаж для сотрудника (любой авторизованный из компании)
-        if action == "briefing_for_employee":
-            import json as _json
-            bid = qs.get("id")
-            if not bid:
-                return err("Укажите id")
-            cur.execute(
-                f"SELECT id, title, subtitle, duration FROM {SCHEMA}.custom_briefings WHERE id=%s AND company_id=%s AND title NOT LIKE '[УДАЛЁН]%%'",
-                (int(bid), company_id),
-            )
-            row = cur.fetchone()
-            if not row:
-                return err("Инструктаж не найден")
-            cur.execute(
-                f"SELECT block_type, data::text FROM {SCHEMA}.custom_briefing_blocks WHERE briefing_id=%s AND sort_order >= 0 ORDER BY sort_order",
-                (int(bid),),
-            )
-            blocks = [{"type": r[0], **_json.loads(r[1])} for r in cur.fetchall()]
-            return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
-                                    "duration": row[3], "blocks": blocks}})
 
         # ?action=briefing_assign — назначить кастомный инструктаж сотрудникам
         if action == "briefing_assign":

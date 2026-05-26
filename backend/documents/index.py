@@ -646,6 +646,24 @@ def handler(event: dict, context) -> dict:
                        "sender_id": user["id"], "receiver_id": int(receiver_id),
                        "body": msg_body, "subject": subject})
 
+        # ?action=msg_delete — удалить своё сообщение
+        if action == "msg_delete":
+            msg_id = body.get("message_id")
+            if not msg_id:
+                return err("Укажите message_id")
+            cur.execute(
+                f"SELECT id FROM {SCHEMA}.messages WHERE id=%s AND sender_id=%s AND company_id=%s",
+                (int(msg_id), user["id"], company_id),
+            )
+            if not cur.fetchone():
+                return err("Сообщение не найдено или нет прав")
+            cur.execute(
+                f"DELETE FROM {SCHEMA}.messages WHERE id=%s AND sender_id=%s",
+                (int(msg_id), user["id"]),
+            )
+            conn.commit()
+            return ok({"ok": True})
+
         return err(f"Неизвестное действие: '{action}'", 400)
 
     finally:
