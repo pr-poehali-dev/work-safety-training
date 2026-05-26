@@ -380,6 +380,129 @@ def handler(event: dict, context) -> dict:
             return ok({"test": {"id": row[0], "title": row[1], "description": row[2],
                                 "passing_score": row[3], "time_limit": row[4], "questions": questions}})
 
+        # ?action=briefing_list — список кастомных инструктажей компании
+        if action == "briefing_list":
+            cur.execute(
+                f"""SELECT b.id, b.title, b.subtitle, b.duration,
+                           b.source_briefing_id, b.source_variant_id,
+                           b.created_at::text, b.updated_at::text,
+                           COUNT(bl.id) AS block_count
+                    FROM {SCHEMA}.custom_briefings b
+                    LEFT JOIN {SCHEMA}.custom_briefing_blocks bl ON bl.briefing_id = b.id
+                    WHERE b.company_id = %s
+                    GROUP BY b.id ORDER BY b.updated_at DESC""",
+                (company_id,),
+            )
+            rows = cur.fetchall()
+            briefings = [{"id": r[0], "title": r[1], "subtitle": r[2], "duration": r[3],
+                          "source_briefing_id": r[4], "source_variant_id": r[5],
+                          "created_at": r[6], "updated_at": r[7], "block_count": r[8]}
+                         for r in rows]
+            return ok({"briefings": briefings})
+
+        # ?action=briefing_get&id=N — получить инструктаж с блоками
+        if action == "briefing_get":
+            import json as _json
+            bid = qs.get("id")
+            if not bid:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, subtitle, duration FROM {SCHEMA}.custom_briefings WHERE id=%s AND company_id=%s",
+                (int(bid), company_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Инструктаж не найден")
+            cur.execute(
+                f"SELECT id, block_type, data::text FROM {SCHEMA}.custom_briefing_blocks WHERE briefing_id=%s ORDER BY sort_order",
+                (int(bid),),
+            )
+            blocks = [{"id": r[0], "type": r[1], **_json.loads(r[2])} for r in cur.fetchall()]
+            return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
+                                    "duration": row[3], "blocks": blocks}})
+
+        # ?action=briefing_save — создать или обновить инструктаж (POST)
+        if action == "briefing_save":
+            import json as _json
+            bid = body.get("id")
+            title = (body.get("title") or "").strip()
+            subtitle = (body.get("subtitle") or "").strip()
+            duration = int(body.get("duration") or 30)
+            source_briefing_id = (body.get("source_briefing_id") or "").strip()
+            source_variant_id = (body.get("source_variant_id") or "").strip()
+            blocks = body.get("blocks") or []
+
+            if not title:
+                return err("Укажите название инструктажа")
+
+            if bid:
+                cur.execute(
+                    f"""UPDATE {SCHEMA}.custom_briefings
+                           SET title=%s, subtitle=%s, duration=%s, updated_at=NOW()
+                         WHERE id=%s AND company_id=%s AND employer_id=%s""",
+                    (title, subtitle, duration, int(bid), company_id, user["id"]),
+                )
+                if cur.rowcount == 0:
+                    return err("Инструктаж не найден или нет доступа")
+                # Помечаем старые блоки как sort_order=-1 (не удаляем)
+                cur.execute(
+                    f"UPDATE {SCHEMA}.custom_briefing_blocks SET sort_order=-1 WHERE briefing_id=%s",
+                    (int(bid),),
+                )
+            else:
+                cur.execute(
+                    f"""INSERT INTO {SCHEMA}.custom_briefings
+                               (company_id, employer_id, title, subtitle, duration, source_briefing_id, source_variant_id)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (company_id, user["id"], title, subtitle, duration, source_briefing_id, source_variant_id),
+                )
+                bid = cur.fetchone()[0]
+
+            for i, blk in enumerate(blocks):
+                blk_type = blk.get("type", "text")
+                data = {k: v for k, v in blk.items() if k not in ("type", "id")}
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.custom_briefing_blocks (briefing_id, sort_order, block_type, data) VALUES (%s,%s,%s,%s)",
+                    (int(bid), i, blk_type, _json.dumps(data, ensure_ascii=False)),
+                )
+            conn.commit()
+            return ok({"ok": True, "id": int(bid)})
+
+        # ?action=briefing_delete — скрыть инструктаж
+        if action == "briefing_delete":
+            bid = body.get("id")
+            if not bid:
+                return err("Укажите id")
+            cur.execute(
+                f"UPDATE {SCHEMA}.custom_briefings SET title='[УДАЛЁН] '||title WHERE id=%s AND company_id=%s AND employer_id=%s",
+                (int(bid), company_id, user["id"]),
+            )
+            if cur.rowcount == 0:
+                return err("Инструктаж не найден или нет доступа")
+            conn.commit()
+            return ok({"ok": True})
+
+        # ?action=briefing_for_employee&id=N — инструктаж для сотрудника (любой авторизованный из компании)
+        if action == "briefing_for_employee":
+            import json as _json
+            bid = qs.get("id")
+            if not bid:
+                return err("Укажите id")
+            cur.execute(
+                f"SELECT id, title, subtitle, duration FROM {SCHEMA}.custom_briefings WHERE id=%s AND company_id=%s AND title NOT LIKE '[УДАЛЁН]%%'",
+                (int(bid), company_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return err("Инструктаж не найден")
+            cur.execute(
+                f"SELECT block_type, data::text FROM {SCHEMA}.custom_briefing_blocks WHERE briefing_id=%s AND sort_order >= 0 ORDER BY sort_order",
+                (int(bid),),
+            )
+            blocks = [{"type": r[0], **_json.loads(r[1])} for r in cur.fetchall()]
+            return ok({"briefing": {"id": row[0], "title": row[1], "subtitle": row[2],
+                                    "duration": row[3], "blocks": blocks}})
+
         return err(f"Неизвестное действие: '{action}'", 400)
 
     finally:

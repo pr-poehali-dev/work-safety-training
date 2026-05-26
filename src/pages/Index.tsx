@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { TESTS_DATA, type TestData } from "@/data/tests";
-import { BRIEFINGS_DATA } from "@/data/briefings";
+import { BRIEFINGS_DATA, type BriefingData } from "@/data/briefings";
 import BriefingPlayer from "@/components/BriefingPlayer";
 import {
   DOCUMENTS_DATA,
@@ -21,6 +21,7 @@ import CompanyContacts from "@/components/CompanyContacts";
 import CompanyChat from "@/components/CompanyChat";
 import EmployerSavedCards from "@/components/EmployerSavedCards";
 import CustomTestBuilder from "@/components/CustomTestBuilder";
+import BriefingEditor from "@/components/BriefingEditor";
 import { useAuth } from "@/contexts/AuthContext";
 import { uGet, uSet } from "@/utils/userStorage";
 
@@ -537,6 +538,9 @@ export default function Index() {
   // Briefing state
   const [activeBriefingId, setActiveBriefingId] = useState<string | null>(null);
   const [completedBriefings, setCompletedBriefings] = useState<Set<string>>(new Set());
+  const [briefingsTab, setBriefingsTab] = useState<"standard" | "custom">("standard");
+  // Кастомный инструктаж для плеера (загруженный с сервера)
+  const [customBriefingData, setCustomBriefingData] = useState<BriefingData | null>(null);
 
   // Test state
   const [testMode, setTestMode] = useState<TestMode>("list");
@@ -622,6 +626,30 @@ export default function Index() {
     setActiveTest(null);
     setAnswers({});
     setCurrentQ(0);
+  };
+
+  const EMPLOYER_URL_BRIEFING = "https://functions.poehali.dev/2db38725-d446-4c74-8d25-b78ef3437142";
+
+  const startCustomBriefing = async (id: number) => {
+    try {
+      const sid = document.cookie.match(/(?:^|;\s*)session_id=([^;]*)/)?.[1] || "";
+      const res = await fetch(`${EMPLOYER_URL_BRIEFING}?action=briefing_for_employee&id=${id}`, {
+        headers: { "X-Cookie": `session_id=${sid}` },
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      const b = d.briefing;
+      const briefingData: BriefingData = {
+        id: `custom_briefing_${id}`,
+        title: b.title,
+        subtitle: b.subtitle || "",
+        duration: b.duration,
+        required: false,
+        blocks: b.blocks,
+      };
+      setCustomBriefingData(briefingData);
+      setActiveBriefingId(`custom_briefing_${id}`);
+    } catch { /* ignore */ }
   };
 
   const saveChecklist = (next: typeof CHECKLISTS_DATA) => {
@@ -1621,72 +1649,105 @@ export default function Index() {
             <div>
               <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-1">Раздел</p>
               <h1 className="text-2xl font-semibold">Инструктажи</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Полные программы с текстом, видео и интерактивными заданиями</p>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {user?.role === "employer" ? "Стандартные инструктажи и управление собственными" : "Полные программы с текстом, видео и интерактивными заданиями"}
+              </p>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              {BRIEFINGS_DATA.map((b) => {
-                const isDone = completedBriefings.has(b.id);
-                const isDue = b.id === "repeat" && !isDone;
-                return (
-                  <div key={b.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isDue ? "border-amber-300" : "border-border"}`}>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isDone
-                          ? <StatusBadge status="done" />
-                          : isDue
-                          ? <StatusBadge status="due" />
-                          : <StatusBadge status="pending" />
-                        }
-                        {b.required && (
-                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+            {/* Вкладки для работодателя */}
+            {user?.role === "employer" && (
+              <div className="flex gap-1 border-b border-border">
+                {([
+                  { id: "standard", label: "Стандартные", icon: "BookOpen" },
+                  { id: "custom",   label: "Мои инструктажи", icon: "Edit3" },
+                ] as const).map(tab => (
+                  <button key={tab.id} onClick={() => setBriefingsTab(tab.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
+                      briefingsTab === tab.id ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}>
+                    <Icon name={tab.icon} size={14} fallback="Circle" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Редактор кастомных инструктажей */}
+            {user?.role === "employer" && briefingsTab === "custom" && (
+              <BriefingEditor
+                onBack={() => setBriefingsTab("standard")}
+                onPreview={(id) => startCustomBriefing(id)}
+              />
+            )}
+
+            {/* Стандартные инструктажи */}
+            {(user?.role !== "employer" || briefingsTab === "standard") && (
+              <div className="grid md:grid-cols-2 gap-4">
+                {BRIEFINGS_DATA.map((b) => {
+                  const isDone = completedBriefings.has(b.id);
+                  const isDue = b.id === "repeat" && !isDone;
+                  return (
+                    <div key={b.id} className={`bg-white border rounded-xl p-5 transition-all duration-200 hover:shadow-md flex flex-col ${isDue ? "border-amber-300" : "border-border"}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isDone ? <StatusBadge status="done" /> : isDue ? <StatusBadge status="due" /> : <StatusBadge status="pending" />}
+                          {b.required && (
+                            <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Обязательный</span>
+                          )}
+                          {b.variants && (
+                            <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">2 варианта</span>
+                          )}
+                        </div>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
+                          <Icon name="Clock" size={12} fallback="Circle" />{b.duration} мин
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-base mb-1.5">{b.title}</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed mb-4 flex-1">{b.subtitle}</p>
+                      <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
+                        {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length > 0 && (
+                          <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                            <Icon name="Play" size={11} fallback="Circle" />
+                            {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length} видео
+                          </span>
                         )}
-                        {b.variants && (
-                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">2 варианта</span>
+                        {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length > 0 && (
+                          <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
+                            <Icon name="Zap" size={11} fallback="Circle" />
+                            {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length} заданий
+                          </span>
                         )}
                       </div>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap ml-2">
-                        <Icon name="Clock" size={12} fallback="Circle" />{b.duration} мин
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-base mb-1.5">{b.title}</h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed mb-4 flex-1">{b.subtitle}</p>
-
-                    <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
-                      {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length > 0 && (
-                        <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
-                          <Icon name="Play" size={11} fallback="Circle" />
-                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type === "video").length} видео
-                        </span>
-                      )}
-                      {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length > 0 && (
-                        <span className="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5">
-                          <Icon name="Zap" size={11} fallback="Circle" />
-                          {(b.blocks ?? b.variants?.[0]?.blocks ?? []).filter(bl => bl.type.startsWith("task")).length} заданий
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => setActiveBriefingId(b.id)}
-                      className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
-                        isDone
-                          ? "bg-muted text-foreground hover:bg-muted/80"
-                          : isDue
-                          ? "bg-amber-500 text-white hover:bg-amber-600"
+                      <button
+                        onClick={() => setActiveBriefingId(b.id)}
+                        className={`w-full py-2.5 text-sm rounded-lg font-medium transition-colors ${
+                          isDone ? "bg-muted text-foreground hover:bg-muted/80"
+                          : isDue ? "bg-amber-500 text-white hover:bg-amber-600"
                           : "bg-primary text-white hover:bg-primary/90"
-                      }`}
-                    >
-                      {isDone ? "Пройти повторно" : isDue ? "Пройти (требуется)" : "Начать инструктаж"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                        }`}
+                      >
+                        {isDone ? "Пройти повторно" : isDue ? "Пройти (требуется)" : "Начать инструктаж"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
         {active === "briefings" && activeBriefingId && (() => {
+          // Кастомный инструктаж
+          if (activeBriefingId.startsWith("custom_briefing_") && customBriefingData) {
+            return (
+              <BriefingPlayer
+                briefing={customBriefingData}
+                onExit={() => { setActiveBriefingId(null); setCustomBriefingData(null); }}
+                onComplete={() => { setActiveBriefingId(null); setCustomBriefingData(null); }}
+              />
+            );
+          }
+          // Стандартный инструктаж
           const briefing = BRIEFINGS_DATA.find(b => b.id === activeBriefingId);
           if (!briefing) return null;
           return (
