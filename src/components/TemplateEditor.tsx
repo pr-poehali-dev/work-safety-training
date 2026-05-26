@@ -24,6 +24,8 @@ export interface SavedCard {
   title: string;
   filled_values: Record<string, string>;
   assignments?: Array<{ employee_id: number; fio: string; assigned_at: string; read_at: string | null }>;
+  file_url?: string | null;
+  file_name?: string | null;
 }
 
 interface Employee { id: number; fio: string; email: string; }

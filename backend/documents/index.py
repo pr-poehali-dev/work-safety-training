@@ -380,7 +380,8 @@ def handler(event: dict, context) -> dict:
                                                        'fio', u.fio,
                                                        'assigned_at', a.assigned_at::text,
                                                        'read_at', a.read_at::text)
-                                 ) FILTER (WHERE a.id IS NOT NULL), '[]') as assignments
+                                 ) FILTER (WHERE a.id IS NOT NULL), '[]') as assignments,
+                                 c.file_url, c.file_name
                           FROM {SCHEMA}.sout_cards c
                           LEFT JOIN {SCHEMA}.sout_card_assignments a ON a.card_id = c.id
                           LEFT JOIN {SCHEMA}.users u ON u.id = a.employee_id
@@ -395,7 +396,8 @@ def handler(event: dict, context) -> dict:
                 import json as _json
                 cards = [{"id": r[0], "card_type": r[1], "template_id": r[2],
                           "title": r[3], "filled_values": _json.loads(r[4] or "{}"),
-                          "created_at": r[5], "updated_at": r[6], "assignments": r[7]}
+                          "created_at": r[5], "updated_at": r[6], "assignments": r[7],
+                          "file_url": r[8], "file_name": r[9]}
                          for r in rows]
             else:
                 sql = f"""SELECT c.id, c.card_type, c.template_id, c.title,
@@ -479,6 +481,39 @@ def handler(event: dict, context) -> dict:
                 return err("Карта не найдена или нет доступа")
             conn.commit()
             return ok({"ok": True})
+
+        # ?action=card_upload — загрузить файл к карте (только employer, base64)
+        if action == "card_upload":
+            if user["role"] != "employer":
+                return err("Только работодатель может загружать файлы", 403)
+            card_id = body.get("card_id")
+            file_data = body.get("file_data")  # base64
+            file_name = (body.get("file_name") or "document.pdf").strip()
+            content_type = body.get("content_type", "application/octet-stream")
+            if not card_id or not file_data:
+                return err("Укажите card_id и file_data")
+            cur.execute(
+                f"SELECT id FROM {SCHEMA}.sout_cards WHERE id=%s AND company_id=%s AND employer_id=%s",
+                (int(card_id), company_id, user["id"]),
+            )
+            if not cur.fetchone():
+                return err("Карта не найдена или нет доступа")
+            raw = base64.b64decode(file_data)
+            ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "bin"
+            key = f"sout/{company_id}/{uuid.uuid4()}.{ext}"
+            s3 = boto3.client(
+                "s3", endpoint_url=S3_ENDPOINT,
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            )
+            s3.put_object(Bucket=S3_BUCKET, Key=key, Body=raw, ContentType=content_type)
+            cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            cur.execute(
+                f"UPDATE {SCHEMA}.sout_cards SET file_url=%s, file_name=%s, updated_at=NOW() WHERE id=%s",
+                (cdn_url, file_name, int(card_id)),
+            )
+            conn.commit()
+            return ok({"ok": True, "file_url": cdn_url, "file_name": file_name})
 
         # ?action=card_mark_read — отметить карту как прочитанную (employee)
         if action == "card_mark_read":

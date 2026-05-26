@@ -24,6 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { uGet, uSet } from "@/utils/userStorage";
 
 const NEWS_URL = "https://functions.poehali.dev/c3136b62-f96f-4c75-a5cf-4c4a43cad9db";
+const DOCS_URL_CONST = "https://functions.poehali.dev/514ab62a-455e-4cf0-a4d2-03efb7296ff4";
 
 interface NewsItem {
   tag: string;
@@ -100,6 +101,60 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ── Загрузка готового файла СОУТ/ПрофРиск ─────────────────────────────────────
+function UploadSoutCard({ cardType, isSout, onUploaded }: { cardType: "sout" | "profrisk"; isSout: boolean; onUploaded: () => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState("");
+  const sid = () => { const m = document.cookie.match(/(?:^|;\s*)session_id=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; };
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    // 1. Создаём карточку-пустышку
+    const title = file.name.replace(/\.[^.]+$/, "") || (isSout ? "Карта СОУТ" : "Карта рисков");
+    const saveRes = await fetch(`${DOCS_URL_CONST}?action=card_save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Cookie": `session_id=${sid()}` },
+      body: JSON.stringify({ card_type: cardType, template_id: `${cardType}_file`, title, filled_values: {} }),
+    });
+    if (!saveRes.ok) { setToast("Ошибка создания карты"); setUploading(false); return; }
+    const { card_id } = await saveRes.json();
+
+    // 2. Загружаем файл
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      const upRes = await fetch(`${DOCS_URL_CONST}?action=card_upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Cookie": `session_id=${sid()}` },
+        body: JSON.stringify({ card_id, file_data: base64, file_name: file.name, content_type: file.type }),
+      });
+      setUploading(false);
+      if (upRes.ok) { setToast("Файл загружен!"); onUploaded(); setTimeout(() => setToast(""), 3000); }
+      else { setToast("Ошибка загрузки файла"); }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div>
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-primary text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+          <Icon name="CheckCircle" size={15} fallback="Circle" /> {toast}
+        </div>
+      )}
+      <label className={`flex items-center gap-2 w-fit cursor-pointer px-4 py-2.5 rounded-xl border-2 border-dashed text-sm font-medium transition-colors ${uploading ? "opacity-50 pointer-events-none" : ""} ${isSout ? "border-green-300 text-green-700 hover:bg-green-50" : "border-amber-300 text-amber-700 hover:bg-amber-50"}`}>
+        {uploading
+          ? <><Icon name="Loader" size={15} className="animate-spin" fallback="Circle" /> Загружаем...</>
+          : <><Icon name="Upload" size={15} fallback="Circle" /> Загрузить готовый файл</>}
+        <input type="file" className="hidden" disabled={uploading}
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+      </label>
+      <p className="text-xs text-muted-foreground mt-1">PDF, Word, Excel, изображения</p>
+    </div>
+  );
+}
+
 // ── Компонент раздела СОУТ / ПрофРисков ──────────────────────────────────────
 interface SoutSectionProps {
   cardType: "sout" | "profrisk";
@@ -120,6 +175,7 @@ function SoutSection({ cardType, templates, userRole, userId, editTemplate, edit
   const isSout = cardType === "sout";
   const isEmployer = userRole === "employer";
   const isEmployee = userRole === "employee";
+  const [cardsKey, setCardsKey] = useState(0);
 
   // Если открыт редактор/просмотр — показываем его
   if (editTemplate) {
@@ -163,11 +219,14 @@ function SoutSection({ cardType, templates, userRole, userId, editTemplate, edit
         <>
           {/* Сохранённые карты */}
           <div>
-            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${isSout ? "text-green-700" : "text-amber-700"}`}>
-              <Icon name="FolderOpen" size={13} fallback="Circle" />
-              Сохранённые карты {isSout ? "СОУТ" : "ПрофРисков"}
-            </p>
-            <EmployerSavedCards cardType={cardType} onEdit={onOpenSaved} />
+            <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+              <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${isSout ? "text-green-700" : "text-amber-700"}`}>
+                <Icon name="FolderOpen" size={13} fallback="Circle" />
+                Сохранённые карты {isSout ? "СОУТ" : "ПрофРисков"}
+              </p>
+              <UploadSoutCard cardType={cardType} isSout={isSout} onUploaded={() => setCardsKey(k => k + 1)} />
+            </div>
+            <EmployerSavedCards key={cardsKey} cardType={cardType} onEdit={onOpenSaved} />
           </div>
 
           {/* Шаблоны для заполнения */}

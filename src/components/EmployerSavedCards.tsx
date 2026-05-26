@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import type { SavedCard } from "@/components/TemplateEditor";
 
 const DOCS_URL = "https://functions.poehali.dev/514ab62a-455e-4cf0-a4d2-03efb7296ff4";
+const EMPLOYER_URL = "https://functions.poehali.dev/2db38725-d446-4c74-8d25-b78ef3437142";
 
 function getCookie(name: string) {
   const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
@@ -12,9 +13,9 @@ function authH() {
   const sid = getCookie("session_id");
   return { "Content-Type": "application/json", ...(sid ? { "X-Cookie": `session_id=${sid}` } : {}) };
 }
-async function apiFetch(action: string, opts: RequestInit = {}, qs: Record<string, string> = {}) {
+async function apiFetch(url: string, action: string, opts: RequestInit = {}, qs: Record<string, string> = {}) {
   const p = new URLSearchParams({ action, ...qs });
-  return fetch(`${DOCS_URL}?${p}`, { ...opts, headers: { ...authH(), ...(opts.headers as Record<string, string> || {}) } });
+  return fetch(`${url}?${p}`, { ...opts, headers: { ...authH(), ...(opts.headers as Record<string, string> || {}) } });
 }
 
 interface Employee { id: number; fio: string; email: string; }
@@ -37,11 +38,14 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
   const [selectedEmps, setSelectedEmps] = useState<number[]>([]);
   const [assigning, setAssigning] = useState(false);
 
+  // Загрузка файла
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch("card_list", {}, { card_type: cardType });
+    const res = await apiFetch(DOCS_URL, "card_list", {}, { card_type: cardType });
     if (res.ok) { const d = await res.json(); setCards(d.cards || []); }
     setLoading(false);
   }, [cardType]);
@@ -51,7 +55,7 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
   const deleteCard = async (card: SavedCard) => {
     if (!confirm(`Удалить карту «${card.title}»? Это действие нельзя отменить.`)) return;
     setDeletingId(card.card_id);
-    const res = await apiFetch("card_delete", {
+    const res = await apiFetch(DOCS_URL, "card_delete", {
       method: "POST",
       body: JSON.stringify({ card_id: card.card_id }),
     });
@@ -65,8 +69,38 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
   };
 
   const loadEmployees = async (q = "") => {
-    const res = await apiFetch("employees", {}, q ? { q } : {});
+    const res = await apiFetch(EMPLOYER_URL, "employees", {}, q ? { q } : {});
     if (res.ok) { const d = await res.json(); setEmployees(d.employees || []); }
+  };
+
+  const uploadFile = async (card: SavedCard, file: File) => {
+    setUploadingId(card.card_id);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      const res = await apiFetch(DOCS_URL, "card_upload", {
+        method: "POST",
+        body: JSON.stringify({
+          card_id: card.card_id,
+          file_data: base64,
+          file_name: file.name,
+          content_type: file.type || "application/octet-stream",
+        }),
+      });
+      const data = await res.json();
+      setUploadingId(null);
+      if (res.ok) {
+        setCards(prev => prev.map(c =>
+          c.card_id === card.card_id
+            ? { ...c, file_url: data.file_url, file_name: data.file_name }
+            : c
+        ));
+        showToast("Файл загружен");
+      } else {
+        showToast(data.error || "Ошибка загрузки");
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const openAssign = async (cardId: number) => {
@@ -79,7 +113,7 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
   const sendToEmployees = async () => {
     if (!assignCardId || selectedEmps.length === 0) return;
     setAssigning(true);
-    const res = await apiFetch("card_assign", {
+    const res = await apiFetch(DOCS_URL, "card_assign", {
       method: "POST",
       body: JSON.stringify({ card_id: assignCardId, employee_ids: selectedEmps }),
     });
@@ -89,7 +123,7 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
       showToast(`Карта отправлена ${data.assigned_to} сотруднику(ам)`);
       setAssignCardId(null);
       setSelectedEmps([]);
-      load(); // обновляем счётчики
+      load();
     } else {
       showToast(data.error || "Ошибка отправки");
     }
@@ -122,6 +156,9 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
             const readBy = card.assignments?.filter(a => a.read_at).length || 0;
             const isDeleting = deletingId === card.card_id;
 
+            const isUploading = uploadingId === card.card_id;
+            const fileInputId = `file-input-${card.card_id}`;
+
             return (
               <div key={card.card_id} className={`rounded-xl border p-4 transition-opacity ${isSout ? "bg-green-50/60 border-green-200" : "bg-amber-50/60 border-amber-200"} ${isDeleting ? "opacity-40" : ""}`}>
                 <div className="flex items-start gap-3">
@@ -139,10 +176,18 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
                     ) : (
                       <p className="text-xs text-muted-foreground mt-0.5">Ещё не отправлена сотрудникам</p>
                     )}
+                    {/* Прикреплённый файл */}
+                    {card.file_url && (
+                      <a href={card.file_url} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1">
+                        <Icon name="Paperclip" size={11} fallback="Circle" />
+                        {card.file_name || "Файл"}
+                      </a>
+                    )}
                   </div>
 
                   {/* Кнопки управления */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     <button
                       onClick={() => openAssign(card.card_id)}
                       title="Отправить сотруднику"
@@ -157,6 +202,16 @@ export default function EmployerSavedCards({ cardType, onEdit }: Props) {
                     >
                       <Icon name="FileEdit" size={12} fallback="Circle" /> Открыть
                     </button>
+                    {/* Загрузить файл */}
+                    <label htmlFor={fileInputId} title={card.file_url ? "Заменить файл" : "Прикрепить файл"}
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg border bg-white transition-colors cursor-pointer ${isUploading ? "opacity-40 pointer-events-none" : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"}`}>
+                      {isUploading
+                        ? <Icon name="Loader" size={13} className="animate-spin" fallback="Circle" />
+                        : <Icon name="Paperclip" size={13} fallback="Circle" />}
+                    </label>
+                    <input id={fileInputId} type="file" className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(card, f); e.target.value = ""; }} />
                     <button
                       onClick={() => deleteCard(card)}
                       disabled={isDeleting}
